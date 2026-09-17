@@ -131,16 +131,22 @@ impl Gpapi {
                 "failed to decode device database: {e}"
             )))
         })?;
-        let encoded = devices.remove(&codename).ok_or_else(|| -> Box<dyn Error + Send + Sync> {
-            Box::new(GpapiError::from(format!(
-                "invalid device codename: {codename}"
-            )))
-        })?;
-        let device_properties = encoded.into_decoded().map_err(|e| -> Box<dyn Error + Send + Sync> {
-            Box::new(GpapiError::from(format!(
-                "failed to decode device properties: {e}"
-            )))
-        })?;
+        let encoded =
+            devices
+                .remove(&codename)
+                .ok_or_else(|| -> Box<dyn Error + Send + Sync> {
+                    Box::new(GpapiError::from(format!(
+                        "invalid device codename: {codename}"
+                    )))
+                })?;
+        let device_properties =
+            encoded
+                .into_decoded()
+                .map_err(|e| -> Box<dyn Error + Send + Sync> {
+                    Box::new(GpapiError::from(format!(
+                        "failed to decode device properties: {e}"
+                    )))
+                })?;
         Ok(Self {
             locale: String::from("en_US"),
             timezone: String::from("UTC"),
@@ -245,11 +251,15 @@ impl Gpapi {
     /// Log in to Google's Play Store API.  This is required for most other actions. The aas token
     /// has to be set via `request_aas_token` or `set_aas_token` first.
     ///
+    /// Terms of service presented by fresh sessions are accepted inline by
+    /// `toc`; if the gate is still up afterwards, the check is retried once
+    /// in case the acceptance only takes effect on the next call.
+    ///
     /// # Errors
     ///
     /// Returns an error if check-in, device-config upload, authentication,
-    /// or the terms-of-service check fails, or if no device-config token is
-    /// returned.
+    /// or the terms-of-service check fails, if `acceptTos` is not
+    /// acknowledged, or if no device-config token is returned.
     pub async fn login(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
         self.checkin().await?;
         if let Some(upload_device_config_token) = self.upload_device_config().await? {
@@ -258,8 +268,20 @@ impl Gpapi {
                 .ok_or_else(|| Box::new(GpapiError::new(GpapiErrorKind::InvalidResponse)))?;
             self.device_config_token = Some(token);
             self.request_auth_token().await?;
-            self.toc().await?;
-            Ok(())
+            // `toc` accepts presented terms inline; retry once in case the
+            // acceptance only takes effect on the next call. Both calls are
+            // boxed: `toc` now contains the whole accept handshake and would
+            // otherwise blow past the future-size limit.
+            match Box::pin(self.toc()).await {
+                Err(e)
+                    if e.downcast_ref::<GpapiError>().is_some_and(|api_error| {
+                        matches!(api_error.kind(), GpapiErrorKind::TermsOfService)
+                    }) =>
+                {
+                    Box::pin(self.toc()).await
+                }
+                other => other,
+            }
         } else {
             Err("No device config token".into())
         }
@@ -470,7 +492,9 @@ impl Gpapi {
                 self.get_default_headers()?,
             )
             .await?;
-        Ok(resp.payload.and_then(|payload| payload.bulk_details_response))
+        Ok(resp
+            .payload
+            .and_then(|payload| payload.bulk_details_response))
     }
 
     async fn checkin(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
@@ -560,11 +584,7 @@ impl Gpapi {
             .extra_info
             .get("Vending.version")
             .ok_or_else(invalid)?;
-        let sdk_version = build
-            .sdk_version
-            .as_ref()
-            .ok_or_else(invalid)?
-            .to_string();
+        let sdk_version = build.sdk_version.as_ref().ok_or_else(invalid)?.to_string();
         let device = build.device.as_ref().ok_or_else(invalid)?;
         let product = build.product.as_ref().ok_or_else(invalid)?;
         let build_product = build.build_product.as_ref().ok_or_else(invalid)?;
@@ -738,7 +758,9 @@ impl Gpapi {
         let resp = self
             .execute_request("uploadDeviceConfig", None, Some(&bytes), headers)
             .await?;
-        Ok(resp.payload.and_then(|payload| payload.upload_device_config_response))
+        Ok(resp
+            .payload
+            .and_then(|payload| payload.upload_device_config_response))
     }
 
     async fn request_auth_token(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
@@ -782,7 +804,13 @@ impl Gpapi {
             .await?;
 
         let reply = parse_form_reply(std::str::from_utf8(&bytes)?);
-        self.auth_token = reply.get("auth").cloned();
+        let auth_token = reply.get("auth").cloned().ok_or_else(|| {
+            let google_error = reply.get("error").cloned().unwrap_or_default();
+            Box::new(GpapiError::from(format!(
+                "authentication failed: {google_error}"
+            )))
+        })?;
+        self.auth_token = Some(auth_token);
         Ok(())
     }
 
@@ -802,13 +830,25 @@ impl Gpapi {
             .ok_or_else(|| Box::new(GpapiError::from("Invalid payload.")))?
             .toc_response
             .ok_or_else(|| Box::new(GpapiError::from("Invalid toc response.")))?;
-        if toc_response.tos_token.is_some() || toc_response.tos_content.is_some() {
+        let tos_present =
+            toc_response.tos_token.is_some() || toc_response.tos_content.is_some();
+        if tos_present {
+            // Fresh sessions present ToS alongside the session cookie: accept
+            // inline like the reference clients, then fall through — the
+            // cookie in this same response is already valid.
             self.tos_token.clone_from(&toc_response.tos_token);
-            return Err(Box::new(GpapiError::new(GpapiErrorKind::TermsOfService)));
+            let acknowledged = self.accept_tos().await?.is_some();
+            if !acknowledged {
+                return Err(Box::new(GpapiError::from(
+                    "Play Store acceptTos was not acknowledged by the server",
+                )));
+            }
         }
         if let Some(cookie) = toc_response.cookie {
             self.dfe_cookie = Some(cookie);
             Ok(())
+        } else if tos_present {
+            Err(Box::new(GpapiError::new(GpapiErrorKind::TermsOfService)))
         } else {
             Err("No DFE cookie found.".into())
         }
@@ -831,12 +871,18 @@ impl Gpapi {
                 form_post(&params)
             };
 
+            let mut headers = self.get_default_headers()?;
+            headers.insert(
+                "content-type",
+                String::from("application/x-www-form-urlencoded"),
+            );
+
             let resp = self
                 .execute_request(
                     "acceptTos",
                     None,
                     Some(&form_body.into_bytes()),
-                    self.get_default_headers()?,
+                    headers,
                 )
                 .await?;
             Ok(resp.payload.and_then(|payload| payload.accept_tos_response))
