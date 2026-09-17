@@ -171,37 +171,39 @@ impl ClientRegistry {
             }
         }
 
+        // Beta/Alpha credentials are optional: if they are missing (or the
+        // channel errors), skip the channel instead of failing the request.
         if Channel::Beta.is_available_for_package(package_name) {
-            match self
-                .get_client(Channel::Beta)
-                .await?
-                .get_details(package_name)
-                .await
-            {
-                Ok(Some(response)) => {
-                    results.insert(Channel::Beta, response);
-                }
+            match self.get_client(Channel::Beta).await {
                 Err(e) => {
-                    console_log!("Error fetching {package_name} for beta channel: {e}");
+                    console_log!("Skipping beta channel for {package_name}: {e}");
                 }
-                _ => {}
+                Ok(client) => match client.get_details(package_name).await {
+                    Ok(Some(response)) => {
+                        results.insert(Channel::Beta, response);
+                    }
+                    Err(e) => {
+                        console_log!("Error fetching {package_name} for beta channel: {e}");
+                    }
+                    Ok(None) => {}
+                },
             }
         }
 
         if Channel::Alpha.is_available_for_package(package_name) {
-            match self
-                .get_client(Channel::Alpha)
-                .await?
-                .get_details(package_name)
-                .await
-            {
-                Ok(Some(response)) => {
-                    results.insert(Channel::Alpha, response);
-                }
+            match self.get_client(Channel::Alpha).await {
                 Err(e) => {
-                    console_log!("Error fetching {package_name} for alpha channel: {e}");
+                    console_log!("Skipping alpha channel for {package_name}: {e}");
                 }
-                _ => {}
+                Ok(client) => match client.get_details(package_name).await {
+                    Ok(Some(response)) => {
+                        results.insert(Channel::Alpha, response);
+                    }
+                    Err(e) => {
+                        console_log!("Error fetching {package_name} for alpha channel: {e}");
+                    }
+                    Ok(None) => {}
+                },
             }
         }
 
