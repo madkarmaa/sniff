@@ -253,7 +253,7 @@ channels. Then:
 ```bash
 bun install
 bun run dev
-curl -s -A "Mozilla/5.0" http://localhost:8787/v1/details/com.discord/stable
+curl -fsSL -A "Mozilla/5.0" http://localhost:8787/v1/details/com.discord/stable
 ```
 
 ### 3. Checks
