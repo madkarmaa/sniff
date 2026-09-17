@@ -10,4 +10,4 @@ routes = [
 command = "cargo install -q --locked worker-build@0.8.6 && worker-build --release"
 
 [vars]
-DEVICE_NAME="px_9_fold"
+DEVICE_NAME="sm_a13_5g"

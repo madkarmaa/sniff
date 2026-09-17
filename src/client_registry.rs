@@ -9,7 +9,7 @@ use crate::google_play_client::{Channel, GooglePlayClient};
 type ClientKey = (Channel, String, Vec<String>);
 
 const DOWNLOAD_TARGETS: [(&str, &str); 4] = [
-    ("px_9_fold", "arm64-v8a"),
+    ("px_9a", "arm64-v8a"),
     ("sm_a13_5g", "armeabi-v7a"),
     ("google_kiwi_x86_64", "x86"),
     ("google_kiwi_x86_64", "x86_64"),
