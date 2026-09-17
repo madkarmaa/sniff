@@ -1,0 +1,11 @@
+{
+    "name": "sniff",
+    "private": true,
+    "devDependencies": {
+        "prettier": "3.9.7",
+        "wrangler": "4.134.0"
+    },
+    "scripts": {
+        "format": "prettier --write --ignore-unknown ."
+    }
+}
