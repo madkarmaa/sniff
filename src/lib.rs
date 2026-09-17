@@ -4,7 +4,7 @@ mod handlers;
 mod openapi_schema;
 mod serializable_types;
 
-use client_registry::create_registry;
+use client_registry::shared_registry;
 use openapi_schema::ApiDoc;
 use utoipa::OpenApi;
 use worker::{Context, Env, Headers, Request, Response, Result, Router, Url, event};
@@ -21,14 +21,14 @@ struct AppState {
 async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
     console_error_panic_hook::set_once();
 
-    let client_registry = create_registry(env.clone()).await;
+    let client_registry = shared_registry(&env);
     let state = AppState { client_registry };
 
     let router = Router::with_data(state);
 
     router
         .get("/", |_req, _ctx| {
-            let url = Url::parse("https://xhyrom.dev/docs/sniff")?;
+            let url = Url::parse(env!("CARGO_PKG_REPOSITORY"))?;
             Response::redirect(url)
         })
         .get("/openapi.json", |_req, _ctx| {

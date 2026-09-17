@@ -39,10 +39,11 @@ use utoipa::{OpenApi, ToSchema};
     info(
         title = "Sniff API",
         description = "API for retrieving Google Play Store app details across different release channels",
-        version = "1.0.0",
+        version = env!("CARGO_PKG_VERSION"),
         contact(
-            name = "API Support",
-            url = "https://xhyrom.dev/docs/sniff"
+            name = "MadKarma",
+            url = "https://github.com/madkarmaa/sniff",
+            email = "me@madkarma.top"
         )
     ),
     servers(

@@ -41,7 +41,7 @@ pub async fn get_details_multi(
 ) -> Result<Response> {
     match client_registry
         .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .await
         .get_details_multi(&package_name)
         .await
     {
@@ -124,7 +124,7 @@ pub async fn get_details_single(
 
     let result = client_registry
         .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .await
         .get_details_with_fallback(&package_name, channel)
         .await;
 
@@ -202,7 +202,7 @@ pub async fn get_download_info(
 
     let result = client_registry
         .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .await
         .get_download_info(&package_name, channel, Some(version_code))
         .await;
 

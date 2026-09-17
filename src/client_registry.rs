@@ -1,7 +1,8 @@
 use gpapi::DownloadInfo;
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Mutex};
-use worker::{console_log, Env};
+use std::sync::{Arc, OnceLock};
+use tokio::sync::Mutex;
+use worker::{console_log, Date, Env};
 
 use crate::google_play_client::{Channel, GooglePlayClient};
 
@@ -14,9 +15,17 @@ const DOWNLOAD_TARGETS: [(&str, &str); 4] = [
     ("google_kiwi_x86_64", "x86_64"),
 ];
 
+/// How long a logged-in client is reused before a fresh login is forced,
+/// in milliseconds. Google-side session state expires; without this a stale
+/// cache would fail every request until the isolate is recycled.
+/// (`std::time::Instant` cannot be used here: the Workers runtime does not
+/// implement it and it panics.)
+const SESSION_TTL_MS: u64 = 1_800_000;
+
 pub struct ClientRegistry {
     clients: HashMap<ClientKey, GooglePlayClient>,
     initialized: HashMap<ClientKey, bool>,
+    logged_in_at_ms: HashMap<ClientKey, u64>,
     env: Env,
 }
 
@@ -26,6 +35,7 @@ impl ClientRegistry {
         Self {
             clients: HashMap::new(),
             initialized: HashMap::new(),
+            logged_in_at_ms: HashMap::new(),
             env,
         }
     }
@@ -104,13 +114,23 @@ impl ClientRegistry {
             self.initialized.insert(key.clone(), false);
         }
 
-        if !self.initialized.get(&key).copied().unwrap_or(false) {
+        let fresh = self.initialized.get(&key).copied().unwrap_or(false)
+            && self.logged_in_at_ms.get(&key).is_some_and(|logged_in_at_ms| {
+                Date::now()
+                    .as_millis()
+                    .saturating_sub(*logged_in_at_ms)
+                    < SESSION_TTL_MS
+            });
+
+        if !fresh {
             let client = self
                 .clients
                 .get_mut(&key)
                 .ok_or_else(|| format!("client missing for channel {channel}"))?;
             client.initialize().await?;
             self.initialized.insert(key.clone(), true);
+            self.logged_in_at_ms
+                .insert(key.clone(), Date::now().as_millis());
         }
 
         self.clients
@@ -309,7 +329,17 @@ fn merge_download_infos(download_infos: Vec<DownloadInfo>) -> DownloadInfo {
 
 pub type SharedClientRegistry = Arc<Mutex<ClientRegistry>>;
 
-pub async fn create_registry(env: Env) -> SharedClientRegistry {
-    let registry = ClientRegistry::new(env);
-    Arc::new(Mutex::new(registry))
+/// Isolate-global registry. Clients log in once and are reused across
+/// requests instead of performing a fresh device check-in per request
+/// (which reads as suspicious activity server-side).
+static GLOBAL_REGISTRY: OnceLock<SharedClientRegistry> = OnceLock::new();
+
+/// Return the shared registry, creating it from `env` on first use.
+/// Bindings are identical for every request served by this worker version,
+/// so the first request's `env` is representative.
+#[must_use]
+pub fn shared_registry(env: &Env) -> SharedClientRegistry {
+    GLOBAL_REGISTRY
+        .get_or_init(|| Arc::new(Mutex::new(ClientRegistry::new(env.clone()))))
+        .clone()
 }
