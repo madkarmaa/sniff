@@ -1,18 +1,8 @@
 use googleplay_protobuf::DetailsResponse;
 use gpapi::{DownloadInfo, Gpapi};
-use std::collections::HashSet;
-use std::sync::LazyLock;
+use std::str::FromStr;
 
-static BETA_PACKAGES: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
-    let mut set = HashSet::new();
-    set.insert("com.discord");
-    set
-});
-static ALPHA_PACKAGES: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
-    let mut set = HashSet::new();
-    set.insert("com.discord");
-    set
-});
+const BETA_ALPHA_PACKAGES: &[&str] = &["com.discord"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Channel {
@@ -31,13 +21,11 @@ impl std::fmt::Display for Channel {
     }
 }
 
-impl Channel {
+impl FromStr for Channel {
+    type Err = String;
+
     /// Parse a channel name (case-insensitive).
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if `s` is not `stable`, `beta`, or `alpha`.
-    pub fn from_str(s: &str) -> Result<Self, String> {
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "stable" => Ok(Self::Stable),
             "beta" => Ok(Self::Beta),
@@ -45,13 +33,14 @@ impl Channel {
             _ => Err(format!("Invalid Channel: {s}")),
         }
     }
+}
 
+impl Channel {
     #[must_use]
     pub fn is_available_for_package(self, package_name: &str) -> bool {
         match self {
             Self::Stable => true,
-            Self::Beta => BETA_PACKAGES.contains(package_name),
-            Self::Alpha => ALPHA_PACKAGES.contains(package_name),
+            Self::Beta | Self::Alpha => BETA_ALPHA_PACKAGES.contains(&package_name),
         }
     }
 }
@@ -62,21 +51,7 @@ pub struct GooglePlayClient {
 }
 
 impl GooglePlayClient {
-    /// Create a client for `device_name`.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the underlying `Gpapi` client cannot be created
-    /// for `device_name`.
-    pub fn new(device_name: &str, email: &str, aas_token: &str, channel: Channel) -> Result<Self, String> {
-        let mut client =
-            Gpapi::new(device_name, email).map_err(|e| format!("failed to create client: {e}"))?;
-        client.set_aas_token(aas_token);
-
-        Ok(Self { client, channel })
-    }
-
-    /// Create a client overriding the advertised ABIs.
+    /// Create a client, optionally overriding the advertised ABIs.
     ///
     /// # Errors
     ///
@@ -91,7 +66,9 @@ impl GooglePlayClient {
     ) -> Result<Self, String> {
         let mut client =
             Gpapi::new(device_name, email).map_err(|e| format!("failed to create client: {e}"))?;
-        client.set_supported_abis(supported_abis.iter().cloned());
+        if !supported_abis.is_empty() {
+            client.set_supported_abis(supported_abis.iter().cloned());
+        }
         client.set_aas_token(aas_token);
 
         Ok(Self { client, channel })
@@ -134,6 +111,7 @@ impl GooglePlayClient {
         version_code: Option<i64>,
     ) -> Result<DownloadInfo, String> {
         let channel = self.channel;
+        // Boxed: the download future is ~90kB, too large to hold inline.
         Box::pin(self.client.get_download_info(package_name, version_code))
             .await
             .map_err(|e| format!("API error for {channel} channel: {e:?}"))

@@ -14,6 +14,8 @@ use bincode::{Decode, Encode};
 include!("src/device_properties.rs");
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    println!("cargo::rerun-if-changed=device.properties");
+    println!("cargo::rerun-if-changed=build.rs");
     if Path::new("src/device_properties.bin").exists() {
         return Ok(());
     }
@@ -24,7 +26,6 @@ fn generate_device_properties_bin() -> Result<(), Box<dyn std::error::Error>> {
     let config = load_config()?;
     let mut device_properties_map = HashMap::new();
     for section in config.sections() {
-        println!("{section:?}");
         let (key, value) = process_section(&config, &section)?;
         device_properties_map.insert(key, value);
     }
@@ -57,8 +58,7 @@ fn process_section(
     let mut android_checkin_encoded = Vec::with_capacity(android_checkin.encoded_len());
     android_checkin.encode(&mut android_checkin_encoded)?;
 
-    let mut device_configuration_encoded =
-        Vec::with_capacity(device_configuration.encoded_len());
+    let mut device_configuration_encoded = Vec::with_capacity(device_configuration.encoded_len());
     device_configuration.encode(&mut device_configuration_encoded)?;
 
     let encoded = EncodedDeviceProperties::new(
@@ -66,35 +66,26 @@ fn process_section(
         android_checkin_encoded,
         extra_info,
     );
-    let key = section
-        .replace("gplayapi_", "")
-        .replace(".properties", "");
+    let key = section.replace("gplayapi_", "").replace(".properties", "");
     Ok((key, encoded))
 }
 
 #[must_use]
 fn build_extra_info(config: &Ini, section: &str) -> HashMap<String, String> {
-    let mut extra_info = HashMap::new();
-    extra_info.insert(
-        "Build.ID".to_string(),
-        config.get(section, "Build.ID").unwrap_or_default(),
-    );
-    extra_info.insert(
-        "Vending.versionString".to_string(),
-        config
-            .get(section, "Vending.versionString")
-            .unwrap_or_default(),
-    );
-    extra_info.insert(
-        "Vending.version".to_string(),
-        config.get(section, "Vending.version").unwrap_or_default(),
-    );
-    extra_info.insert(
-        "Build.VERSION.RELEASE".to_string(),
-        config
-            .get(section, "Build.VERSION.RELEASE")
-            .unwrap_or_default(),
-    );
+    let mut extra_info: HashMap<String, String> = [
+        "Build.ID",
+        "Vending.versionString",
+        "Vending.version",
+        "Build.VERSION.RELEASE",
+    ]
+    .into_iter()
+    .map(|key| {
+        (
+            String::from(key),
+            config.get(section, key).unwrap_or_default(),
+        )
+    })
+    .collect();
     if let Some(sim_operator) = config.get(section, "SimOperator") {
         extra_info.insert("SimOperator".to_string(), sim_operator);
     }
@@ -197,9 +188,11 @@ fn get_bool(
     section: &str,
     key: &str,
 ) -> Result<Option<bool>, Box<dyn std::error::Error>> {
-    config.getbool(section, key).map_err(|e| -> Box<dyn std::error::Error> {
-        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e))
-    })
+    config
+        .getbool(section, key)
+        .map_err(|e| -> Box<dyn std::error::Error> {
+            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+        })
 }
 
 fn get_required_string(
@@ -207,12 +200,14 @@ fn get_required_string(
     section: &str,
     key: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
-    config.get(section, key).ok_or_else(|| -> Box<dyn std::error::Error> {
-        Box::new(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            format!("missing required key '{key}' in section '{section}'"),
-        ))
-    })
+    config
+        .get(section, key)
+        .ok_or_else(|| -> Box<dyn std::error::Error> {
+            Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("missing required key '{key}' in section '{section}'"),
+            ))
+        })
 }
 
 fn get_required_list(

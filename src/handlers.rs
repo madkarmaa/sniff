@@ -5,9 +5,19 @@ use crate::google_play_client::Channel;
 use crate::openapi_schema::{
     ApiResponse, DownloadInfo, MultiChannelApiResponse, SerializableDetailsResponse,
 };
-use crate::serializable_types::SerializableDetailsResponse as ActualSerializableDetailsResponse;
+use crate::serializable_types::SerializableDetailsResponse as JsonDetails;
 use std::collections::HashMap;
+use std::str::FromStr;
 use worker::{Headers, Response, Result};
+
+fn error_response(status: u16, message: String) -> Result<Response> {
+    Ok(Response::from_json(&ApiResponse::<()> {
+        success: false,
+        data: None,
+        error: Some(message),
+    })?
+    .with_status(status))
+}
 
 #[utoipa::path(
     get,
@@ -46,14 +56,9 @@ pub async fn get_details_multi(
         .await
     {
         Ok(details_map) => {
-            let serialized_map: HashMap<String, ActualSerializableDetailsResponse> = details_map
+            let serialized_map: HashMap<String, JsonDetails> = details_map
                 .into_iter()
-                .map(|(channel, details)| {
-                    (
-                        channel.to_string(),
-                        ActualSerializableDetailsResponse(details),
-                    )
-                })
+                .map(|(channel, details)| (channel.to_string(), JsonDetails(details)))
                 .collect();
 
             let available_channels = serialized_map.keys().cloned().collect::<Vec<_>>().join(",");
@@ -70,15 +75,7 @@ pub async fn get_details_multi(
 
             Ok(Response::from_json(&response)?.with_headers(headers))
         }
-        Err(e) => {
-            let response = MultiChannelApiResponse::<ActualSerializableDetailsResponse> {
-                success: false,
-                data: None,
-                error: Some(e),
-            };
-
-            Ok(Response::from_json(&response)?.with_status(500))
-        }
+        Err(e) => error_response(500, e),
     }
 }
 
@@ -112,14 +109,7 @@ pub async fn get_details_single(
 ) -> Result<Response> {
     let channel = match Channel::from_str(&channel) {
         Ok(ch) => ch,
-        Err(e) => {
-            let response = ApiResponse::<()> {
-                success: false,
-                data: None,
-                error: Some(e),
-            };
-            return Ok(Response::from_json(&response)?.with_status(400));
-        }
+        Err(e) => return error_response(400, e),
     };
 
     let result = client_registry
@@ -132,27 +122,13 @@ pub async fn get_details_single(
         Ok(Some((_, details))) => {
             let response = ApiResponse {
                 success: true,
-                data: Some(ActualSerializableDetailsResponse(details)),
+                data: Some(JsonDetails(details)),
                 error: None,
             };
             Ok(Response::from_json(&response)?)
         }
-        Ok(None) => {
-            let response = ApiResponse::<ActualSerializableDetailsResponse> {
-                success: false,
-                data: None,
-                error: Some(format!("App '{package_name}' not found")),
-            };
-            Ok(Response::from_json(&response)?.with_status(404))
-        }
-        Err(e) => {
-            let response = ApiResponse::<ActualSerializableDetailsResponse> {
-                success: false,
-                data: None,
-                error: Some(e),
-            };
-            Ok(Response::from_json(&response)?.with_status(500))
-        }
+        Ok(None) => error_response(404, format!("App '{package_name}' not found")),
+        Err(e) => error_response(500, e),
     }
 }
 
@@ -190,14 +166,7 @@ pub async fn get_download_info(
 ) -> Result<Response> {
     let channel = match Channel::from_str(&channel) {
         Ok(ch) => ch,
-        Err(e) => {
-            let response = ApiResponse::<()> {
-                success: false,
-                data: None,
-                error: Some(e),
-            };
-            return Ok(Response::from_json(&response)?.with_status(400));
-        }
+        Err(e) => return error_response(400, e),
     };
 
     let result = client_registry
@@ -216,21 +185,7 @@ pub async fn get_download_info(
             };
             Ok(Response::from_json(&response)?)
         }
-        Ok(None) => {
-            let response = ApiResponse::<DownloadInfo> {
-                success: false,
-                data: None,
-                error: Some(format!("App '{package_name}' not found")),
-            };
-            Ok(Response::from_json(&response)?.with_status(404))
-        }
-        Err(e) => {
-            let response = ApiResponse::<DownloadInfo> {
-                success: false,
-                data: None,
-                error: Some(e),
-            };
-            Ok(Response::from_json(&response)?.with_status(500))
-        }
+        Ok(None) => error_response(404, format!("App '{package_name}' not found")),
+        Err(e) => error_response(500, e),
     }
 }

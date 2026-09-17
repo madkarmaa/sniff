@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-gpapi = "6.0.0"
-tokio = "1.39.2"
+gpapi = { path = "../gpapi" }
+tokio = { version = "1.39.2", features = ["macros", "rt-multi-thread"] }
 
 [lints]
 workspace = true

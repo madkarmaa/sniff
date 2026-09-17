@@ -4,13 +4,9 @@ use std::io::Error as IOError;
 
 #[derive(Debug)]
 pub enum ErrorKind {
-    FileExists,
-    DirectoryExists,
-    DirectoryMissing,
     InvalidApp,
     Authentication,
     TermsOfService,
-    PermissionDenied,
     InvalidResponse,
     LoginRequired,
     IO(IOError),
@@ -72,12 +68,7 @@ impl StdError for Error {}
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.kind() {
-            ErrorKind::FileExists => write!(f, "File already exists"),
             ErrorKind::InvalidApp => write!(f, "Invalid app response"),
-            ErrorKind::DirectoryExists => write!(f, "Directory already exists"),
-            ErrorKind::DirectoryMissing => {
-                write!(f, "Destination path provided is not a valid directory")
-            }
             ErrorKind::Authentication => write!(
                 f,
                 "Could not authenticate with Google. Please provide a new oAuth token."
@@ -86,7 +77,6 @@ impl fmt::Display for Error {
                 f,
                 "Must accept Google Play Terms of Service before proceeding."
             ),
-            ErrorKind::PermissionDenied => write!(f, "Cannot create file: permission denied"),
             ErrorKind::InvalidResponse => write!(f, "Invalid response from the remote host"),
             ErrorKind::LoginRequired => write!(f, "Logging in is required for this action"),
             ErrorKind::IO(err) => err.fmt(f),

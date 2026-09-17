@@ -9,19 +9,31 @@ mod details_response_serde {
     };
     use serde::ser::{SerializeStruct, Serializer};
 
+    macro_rules! opt_field {
+        ($state:ident, $name:literal, $opt:expr) => {
+            if let Some(ref value) = $opt {
+                $state.serialize_field($name, value)?;
+            }
+        };
+    }
+
+    macro_rules! opt_wrap {
+        ($state:ident, $name:literal, $opt:expr, $wrap:ident) => {
+            if let Some(ref value) = $opt {
+                $state.serialize_field($name, &$wrap(value))?;
+            }
+        };
+    }
+
     pub fn serialize<S>(details: &DetailsResponse, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
         let mut state = serializer.serialize_struct("DetailsResponse", 10)?;
 
-        if let Some(ref item) = details.item {
-            state.serialize_field("item", &SerializableItem(item))?;
-        }
+        opt_wrap!(state, "item", details.item, SerializableItem);
 
-        if let Some(ref footer_html) = details.footer_html {
-            state.serialize_field("footer_html", footer_html)?;
-        }
+        opt_field!(state, "footer_html", details.footer_html);
 
         if !details.discovery_badge.is_empty() {
             let serializable_badges: Vec<SerializableDiscoveryBadge> = details
@@ -32,13 +44,9 @@ mod details_response_serde {
             state.serialize_field("discovery_badge", &serializable_badges)?;
         }
 
-        if let Some(enable_reviews) = details.enable_reviews {
-            state.serialize_field("enable_reviews", &enable_reviews)?;
-        }
+        opt_field!(state, "enable_reviews", details.enable_reviews);
 
-        if let Some(ref features) = details.features {
-            state.serialize_field("features", &SerializableFeatures(features))?;
-        }
+        opt_wrap!(state, "features", details.features, SerializableFeatures);
 
         state.end()
     }
@@ -66,79 +74,49 @@ mod details_response_serde {
             let item = self.0;
             let mut state = serializer.serialize_struct("Item", 20)?;
 
-            if let Some(ref id) = item.id {
-                state.serialize_field("id", id)?;
+            opt_field!(state, "id", item.id);
+
+            opt_field!(state, "sub_id", item.sub_id);
+
+            if let Some(ref value) = item.r#type {
+                state.serialize_field("type", value)?;
             }
 
-            if let Some(ref sub_id) = item.sub_id {
-                state.serialize_field("sub_id", sub_id)?;
-            }
+            opt_field!(state, "category_id", item.category_id);
 
-            if let Some(ref r#type) = item.r#type {
-                state.serialize_field("type", r#type)?;
-            }
+            opt_field!(state, "title", item.title);
 
-            if let Some(ref category_id) = item.category_id {
-                state.serialize_field("category_id", category_id)?;
-            }
+            opt_field!(state, "creator", item.creator);
 
-            if let Some(ref title) = item.title {
-                state.serialize_field("title", title)?;
-            }
+            opt_field!(state, "description_html", item.description_html);
 
-            if let Some(ref creator) = item.creator {
-                state.serialize_field("creator", creator)?;
-            }
-
-            if let Some(ref description_html) = item.description_html {
-                state.serialize_field("description_html", description_html)?;
-            }
-
-            // offer
             if !item.offer.is_empty() {
                 let serializable_offers: Vec<SerializableOffer> =
                     item.offer.iter().map(SerializableOffer).collect();
                 state.serialize_field("offer", &serializable_offers)?;
             }
 
-            // availability
+            opt_wrap!(state, "details", item.details, SerializableDocumentDetails);
 
-            // container_metadata
+            opt_field!(state, "subtitle", item.subtitle);
 
-            if let Some(ref details) = item.details {
-                state.serialize_field("details", &SerializableDocumentDetails(details))?;
-            }
+            opt_wrap!(state, "app_info", item.app_info, SerializableAppInfo);
 
-            // aggregate_rating
+            opt_field!(state, "mature", item.mature);
 
-            if let Some(ref subtitle) = item.subtitle {
-                state.serialize_field("subtitle", subtitle)?;
-            }
+            opt_field!(
+                state,
+                "promotional_description",
+                item.promotional_description
+            );
 
-            if let Some(ref app_info) = item.app_info {
-                state.serialize_field("app_info", &SerializableAppInfo(app_info))?;
-            }
+            opt_field!(
+                state,
+                "available_for_preregistration",
+                item.available_for_preregistration
+            );
 
-            if let Some(ref mature) = item.mature {
-                state.serialize_field("mature", mature)?;
-            }
-
-            if let Some(ref promotional_description) = item.promotional_description {
-                state.serialize_field("promotional_description", promotional_description)?;
-            }
-
-            if let Some(ref available_for_preregistration) = item.available_for_preregistration {
-                state.serialize_field(
-                    "available_for_preregistration",
-                    available_for_preregistration,
-                )?;
-            }
-
-            // tip
-
-            if let Some(ref force_shareability) = item.force_shareability {
-                state.serialize_field("force_shareability", force_shareability)?;
-            }
+            opt_field!(state, "force_shareability", item.force_shareability);
 
             state.end()
         }
@@ -152,60 +130,45 @@ mod details_response_serde {
             let badge = self.0;
             let mut state = serializer.serialize_struct("DiscoveryBadge", 14)?;
 
-            if let Some(ref label) = badge.label {
-                state.serialize_field("label", label)?;
-            }
+            opt_field!(state, "label", badge.label);
 
-            if let Some(ref image) = badge.image {
-                state.serialize_field("image", &SerializableImage(image))?;
-            }
+            opt_wrap!(state, "image", badge.image, SerializableImage);
 
-            if let Some(background_color) = badge.background_color {
-                state.serialize_field("background_color", &background_color)?;
-            }
+            opt_field!(state, "background_color", badge.background_color);
 
-            if let Some(ref badge_container1) = badge.badge_container1 {
-                state.serialize_field(
-                    "badge_container1",
-                    &SerializableDiscoveryBadgeLink(badge_container1),
-                )?;
-            }
+            opt_wrap!(
+                state,
+                "badge_container1",
+                badge.badge_container1,
+                SerializableDiscoveryBadgeLink
+            );
 
-            if let Some(is_plus_one) = badge.is_plus_one {
-                state.serialize_field("is_plus_one", &is_plus_one)?;
-            }
+            opt_field!(state, "is_plus_one", badge.is_plus_one);
 
-            if let Some(aggregate_rating) = badge.aggregate_rating {
-                state.serialize_field("aggregate_rating", &aggregate_rating)?;
-            }
+            opt_field!(state, "aggregate_rating", badge.aggregate_rating);
 
-            if let Some(user_star_rating) = badge.user_star_rating {
-                state.serialize_field("user_star_rating", &user_star_rating)?;
-            }
+            opt_field!(state, "user_star_rating", badge.user_star_rating);
 
-            if let Some(ref download_count) = badge.download_count {
-                state.serialize_field("download_count", download_count)?;
-            }
+            opt_field!(state, "download_count", badge.download_count);
 
-            if let Some(ref download_units) = badge.download_units {
-                state.serialize_field("download_units", download_units)?;
-            }
+            opt_field!(state, "download_units", badge.download_units);
 
-            if let Some(ref content_description) = badge.content_description {
-                state.serialize_field("content_description", content_description)?;
-            }
+            opt_field!(state, "content_description", badge.content_description);
 
-            if let Some(ref player_badge) = badge.player_badge {
-                state.serialize_field("player_badge", &SerializablePlayerBadge(player_badge))?;
-            }
+            opt_wrap!(
+                state,
+                "player_badge",
+                badge.player_badge,
+                SerializablePlayerBadge
+            );
 
-            if let Some(ref family_age_range_badge) = badge.family_age_range_badge {
-                state.serialize_field("family_age_range_badge", family_age_range_badge)?;
-            }
+            opt_field!(
+                state,
+                "family_age_range_badge",
+                badge.family_age_range_badge
+            );
 
-            if let Some(ref family_category_badge) = badge.family_category_badge {
-                state.serialize_field("family_category_badge", family_category_badge)?;
-            }
+            opt_field!(state, "family_category_badge", badge.family_category_badge);
 
             state.end()
         }
@@ -249,13 +212,9 @@ mod details_response_serde {
             let feature = self.0;
             let mut state = serializer.serialize_struct("Feature", 2)?;
 
-            if let Some(ref label) = feature.label {
-                state.serialize_field("label", label)?;
-            }
+            opt_field!(state, "label", feature.label);
 
-            if let Some(ref value) = feature.value {
-                state.serialize_field("value", value)?;
-            }
+            opt_field!(state, "value", feature.value);
 
             state.end()
         }
@@ -269,9 +228,7 @@ mod details_response_serde {
             let badge = self.0;
             let mut state = serializer.serialize_struct("PlayerBadge", 1)?;
 
-            if let Some(ref overlay_icon) = badge.overlay_icon {
-                state.serialize_field("overlay_icon", &SerializableImage(overlay_icon))?;
-            }
+            opt_wrap!(state, "overlay_icon", badge.overlay_icon, SerializableImage);
 
             state.end()
         }
@@ -285,9 +242,7 @@ mod details_response_serde {
             let link = self.0;
             let mut state = serializer.serialize_struct("DiscoveryBadgeLink", 3)?;
 
-            if let Some(ref badge_link) = link.link {
-                state.serialize_field("link", &SerializableLink(badge_link))?;
-            }
+            opt_wrap!(state, "link", link.link, SerializableLink);
 
             state.end()
         }
@@ -301,9 +256,7 @@ mod details_response_serde {
             let image = self.0;
             let mut state = serializer.serialize_struct("Image", 5)?;
 
-            if let Some(ref url) = image.image_url {
-                state.serialize_field("image_url", url)?;
-            }
+            opt_field!(state, "image_url", image.image_url);
 
             state.end()
         }
@@ -317,9 +270,7 @@ mod details_response_serde {
             let link = self.0;
             let mut state = serializer.serialize_struct("Link", 3)?;
 
-            if let Some(ref uri) = link.uri {
-                state.serialize_field("uri", uri)?;
-            }
+            opt_field!(state, "uri", link.uri);
 
             state.end()
         }
@@ -333,9 +284,7 @@ mod details_response_serde {
             let app_info = self.0;
             let mut state = serializer.serialize_struct("AppInfo", 2)?;
 
-            if let Some(ref title) = app_info.title {
-                state.serialize_field("title", title)?;
-            }
+            opt_field!(state, "title", app_info.title);
 
             if !app_info.section.is_empty() {
                 let section: Vec<SerializableAppInfoSection> = app_info
@@ -359,13 +308,14 @@ mod details_response_serde {
             let section = self.0;
             let mut state = serializer.serialize_struct("AppInfoSection", 2)?;
 
-            if let Some(ref label) = section.label {
-                state.serialize_field("label", label)?;
-            }
+            opt_field!(state, "label", section.label);
 
-            if let Some(ref container) = section.container {
-                state.serialize_field("container", &SerializableAppInfoContainer(container))?;
-            }
+            opt_wrap!(
+                state,
+                "container",
+                section.container,
+                SerializableAppInfoContainer
+            );
 
             state.end()
         }
@@ -379,13 +329,9 @@ mod details_response_serde {
             let container = self.0;
             let mut state = serializer.serialize_struct("AppInfoContainer", 2)?;
 
-            if let Some(ref image) = container.image {
-                state.serialize_field("image", &SerializableImage(image))?;
-            }
+            opt_wrap!(state, "image", container.image, SerializableImage);
 
-            if let Some(ref description) = container.description {
-                state.serialize_field("description", description)?;
-            }
+            opt_field!(state, "description", container.description);
 
             state.end()
         }
@@ -399,69 +345,33 @@ mod details_response_serde {
             let details = self.0;
             let mut state = serializer.serialize_struct("AppDetails", 14)?;
 
-            if let Some(ref developer_name) = details.developer_name {
-                state.serialize_field("developer_name", developer_name)?;
-            }
+            opt_field!(state, "developer_name", details.developer_name);
 
-            if let Some(ref major_version_number) = details.major_version_number {
-                state.serialize_field("major_version_number", major_version_number)?;
-            }
+            opt_field!(state, "major_version_number", details.major_version_number);
 
-            if let Some(ref version_code) = details.version_code {
-                state.serialize_field("version_code", version_code)?;
-            }
+            opt_field!(state, "version_code", details.version_code);
 
-            if let Some(ref version_string) = details.version_string {
-                state.serialize_field("version_string", version_string)?;
-            }
+            opt_field!(state, "version_string", details.version_string);
 
-            if let Some(ref title) = details.title {
-                state.serialize_field("title", title)?;
-            }
+            opt_field!(state, "title", details.title);
 
-            // category
+            opt_field!(state, "info_download_size", details.info_download_size);
 
-            if let Some(ref info_download_size) = details.info_download_size {
-                state.serialize_field("info_download_size", info_download_size)?;
-            }
+            opt_field!(state, "developer_email", details.developer_email);
 
-            // permission
+            opt_field!(state, "developer_website", details.developer_website);
 
-            if let Some(ref developer_email) = details.developer_email {
-                state.serialize_field("developer_email", developer_email)?;
-            }
+            opt_field!(state, "info_download", details.info_download);
 
-            if let Some(ref developer_website) = details.developer_website {
-                state.serialize_field("developer_website", developer_website)?;
-            }
+            opt_field!(state, "package_name", details.package_name);
 
-            if let Some(ref info_download) = details.info_download {
-                state.serialize_field("info_download", info_download)?;
-            }
+            opt_field!(state, "recent_changes_html", details.recent_changes_html);
 
-            if let Some(ref package_name) = details.package_name {
-                state.serialize_field("package_name", package_name)?;
-            }
+            opt_field!(state, "info_updated_on", details.info_updated_on);
 
-            if let Some(ref recent_changes_html) = details.recent_changes_html {
-                state.serialize_field("recent_changes_html", recent_changes_html)?;
-            }
+            opt_field!(state, "app_type", details.app_type);
 
-            if let Some(ref info_updated_on) = details.info_updated_on {
-                state.serialize_field("info_updated_on", info_updated_on)?;
-            }
-
-            // files
-
-            if let Some(ref app_type) = details.app_type {
-                state.serialize_field("app_type", app_type)?;
-            }
-
-            // split id
-
-            if let Some(ref target_sdk_version) = details.target_sdk_version {
-                state.serialize_field("target_sdk_version", target_sdk_version)?;
-            }
+            opt_field!(state, "target_sdk_version", details.target_sdk_version);
 
             state.end()
         }
@@ -475,9 +385,12 @@ mod details_response_serde {
             let details = self.0;
             let mut state = serializer.serialize_struct("DocumentDetails", 1)?;
 
-            if let Some(ref app_details) = details.app_details {
-                state.serialize_field("app_details", &SerializableAppDetails(app_details))?;
-            }
+            opt_wrap!(
+                state,
+                "app_details",
+                details.app_details,
+                SerializableAppDetails
+            );
 
             state.end()
         }
@@ -491,17 +404,11 @@ mod details_response_serde {
             let offer = self.0;
             let mut state = serializer.serialize_struct("Offer", 1)?;
 
-            if let Some(ref micros) = offer.micros {
-                state.serialize_field("micros", micros)?;
-            }
+            opt_field!(state, "micros", offer.micros);
 
-            if let Some(ref currency_code) = offer.currency_code {
-                state.serialize_field("currency_code", currency_code)?;
-            }
+            opt_field!(state, "currency_code", offer.currency_code);
 
-            if let Some(ref formatted_amount) = offer.formatted_amount {
-                state.serialize_field("formatted_amount", formatted_amount)?;
-            }
+            opt_field!(state, "formatted_amount", offer.formatted_amount);
 
             if !offer.converted_price.is_empty() {
                 let converted_prices: Vec<SerializableOffer> = offer
@@ -512,62 +419,41 @@ mod details_response_serde {
                 state.serialize_field("converted_price", &converted_prices)?;
             }
 
-            if let Some(ref checkout_flow_required) = offer.checkout_flow_required {
-                state.serialize_field("checkout_flow_required", checkout_flow_required)?;
-            }
+            opt_field!(
+                state,
+                "checkout_flow_required",
+                offer.checkout_flow_required
+            );
 
-            if let Some(ref full_price_micros) = offer.full_price_micros {
-                state.serialize_field("full_price_micros", full_price_micros)?;
-            }
+            opt_field!(state, "full_price_micros", offer.full_price_micros);
 
-            if let Some(ref formatted_full_amount) = offer.formatted_full_amount {
-                state.serialize_field("formatted_full_amount", formatted_full_amount)?;
-            }
+            opt_field!(state, "formatted_full_amount", offer.formatted_full_amount);
 
-            if let Some(ref offer_type) = offer.offer_type {
-                state.serialize_field("offer_type", offer_type)?;
-            }
+            opt_field!(state, "offer_type", offer.offer_type);
 
-            if let Some(ref on_sale_date) = offer.on_sale_date {
-                state.serialize_field("on_sale_date", on_sale_date)?;
-            }
+            opt_field!(state, "on_sale_date", offer.on_sale_date);
 
             if !offer.promotion_label.is_empty() {
-                let promotion_labels: Vec<String> = offer.promotion_label.clone();
-                state.serialize_field("promotion_label", &promotion_labels)?;
+                state.serialize_field("promotion_label", &offer.promotion_label)?;
             }
 
-            if let Some(ref formatted_name) = offer.formatted_name {
-                state.serialize_field("formatted_name", formatted_name)?;
-            }
+            opt_field!(state, "formatted_name", offer.formatted_name);
 
-            if let Some(ref formatted_description) = offer.formatted_description {
-                state.serialize_field("formatted_description", formatted_description)?;
-            }
+            opt_field!(state, "formatted_description", offer.formatted_description);
 
-            if let Some(ref licensed_offer_type) = offer.licensed_offer_type {
-                state.serialize_field("licensed_offer_type", licensed_offer_type)?;
-            }
+            opt_field!(state, "licensed_offer_type", offer.licensed_offer_type);
 
-            //if let Some(ref subscription_content_terms) = offer.subscription_content_terms {
-            //    state.serialize_field("subscription_content_terms", subscription_content_terms)?;
-            //}
+            opt_field!(state, "offer_id", offer.offer_id);
 
-            if let Some(ref offer_id) = offer.offer_id {
-                state.serialize_field("offer_id", offer_id)?;
-            }
+            opt_field!(state, "sale", offer.sale);
 
-            if let Some(ref sale) = offer.sale {
-                state.serialize_field("sale", sale)?;
-            }
+            opt_field!(
+                state,
+                "instant_purchase_enabled",
+                offer.instant_purchase_enabled
+            );
 
-            if let Some(ref instant_purchase_enabled) = offer.instant_purchase_enabled {
-                state.serialize_field("instant_purchase_enabled", instant_purchase_enabled)?;
-            }
-
-            if let Some(ref sale_message) = offer.sale_message {
-                state.serialize_field("sale_message", sale_message)?;
-            }
+            opt_field!(state, "sale_message", offer.sale_message);
 
             state.end()
         }

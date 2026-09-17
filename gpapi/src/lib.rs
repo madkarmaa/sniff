@@ -37,11 +37,10 @@
 //! }
 //! ```
 //!
-//! From here, you can get package details, get the info to download a package, or use the library to download it.
+//! From here, you can get package details or get the info to download a package.
 //!
 //! ```rust
 //! # use gpapi::Gpapi;
-//! # use std::path::Path;
 //! # #[tokio::main]
 //! # async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 //! # let mut api = Gpapi::new("px_7a", &email)?;
@@ -52,8 +51,6 @@
 //!
 //! let download_info = api.get_download_info("com.instagram.android", None).await;
 //! println!("{:?}", download_info);
-//!
-//! api.download("com.instagram.android", None, true, true, true, &Path::new("/tmp/testing"), None).await;
 //! # Ok(())
 //! # }
 //! ```
@@ -63,8 +60,8 @@ pub mod error;
 
 use bytes::Bytes;
 use prost::Message;
-use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use reqwest::Url;
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use std::collections::HashMap;
 use std::error::Error;
 use std::io::Cursor;
@@ -106,7 +103,7 @@ pub struct Gpapi {
     tos_token: Option<String>,
     dfe_cookie: Option<String>,
     gsf_id: Option<i64>,
-    client: Box<reqwest::Client>,
+    client: reqwest::Client,
 }
 
 impl Gpapi {
@@ -117,9 +114,9 @@ impl Gpapi {
     /// Returns an error if the embedded device database cannot be decoded,
     /// if `device_codename` is unknown, or if the stored device properties
     /// cannot be decoded.
-    pub fn new<S: Into<String>>(
-        device_codename: S,
-        email: S,
+    pub fn new(
+        device_codename: impl Into<String>,
+        email: impl Into<String>,
     ) -> Result<Self, Box<dyn Error + Send + Sync>> {
         let codename: String = device_codename.into();
         let (mut devices, _) = bincode::borrow_decode_from_slice::<
@@ -159,7 +156,7 @@ impl Gpapi {
             tos_token: None,
             dfe_cookie: None,
             gsf_id: None,
-            client: Box::new(reqwest::Client::new()),
+            client: reqwest::Client::new(),
         })
     }
 
@@ -391,10 +388,8 @@ impl Gpapi {
                         0 => "main",
                         _ => "patch",
                     };
-                    let filename =
-                        format!("{main_patch}.{version_code}.{pkg_name}.obb");
-                    additional_files
-                        .push((Some(filename), additional_file.download_url));
+                    let filename = format!("{main_patch}.{version_code}.{pkg_name}.obb");
+                    additional_files.push((Some(filename), additional_file.download_url));
                 }
             }
             let dex_metadata_url = app_delivery_data
@@ -470,13 +465,11 @@ impl Gpapi {
         if self.auth_token.is_none() {
             return Err(Box::new(GpapiError::new(GpapiErrorKind::LoginRequired)));
         }
-        let mut req = BulkDetailsRequest {
+        let req = BulkDetailsRequest {
             doc_id: pkg_names.iter().copied().map(String::from).collect(),
             include_child_docs: Some(false),
             ..Default::default()
         };
-        req.doc_id = pkg_names.iter().copied().map(String::from).collect();
-        req.include_child_docs = Some(false);
         let mut bytes = Vec::with_capacity(req.encoded_len());
         req.encode(&mut bytes)?;
         let resp = self
@@ -647,11 +640,11 @@ impl Gpapi {
         Ok(())
     }
 
-    fn append_auth_headers<S: Into<String>>(
+    fn append_auth_headers(
         &self,
         headers: &mut HashMap<&str, String>,
-        build_device: S,
-        build_id: S,
+        build_device: impl Into<String>,
+        build_id: impl Into<String>,
     ) {
         let build_device: String = build_device.into();
         let build_id: String = build_id.into();
@@ -825,8 +818,7 @@ impl Gpapi {
             .ok_or_else(|| Box::new(GpapiError::from("Invalid payload.")))?
             .toc_response
             .ok_or_else(|| Box::new(GpapiError::from("Invalid toc response.")))?;
-        let tos_present =
-            toc_response.tos_token.is_some() || toc_response.tos_content.is_some();
+        let tos_present = toc_response.tos_token.is_some() || toc_response.tos_content.is_some();
         if tos_present {
             // Fresh sessions present ToS alongside the session cookie: accept
             // inline like the reference clients, then fall through — the
@@ -873,12 +865,7 @@ impl Gpapi {
             );
 
             let resp = self
-                .execute_request(
-                    "acceptTos",
-                    None,
-                    Some(&form_body.into_bytes()),
-                    headers,
-                )
+                .execute_request("acceptTos", None, Some(&form_body.into_bytes()), headers)
                 .await?;
             Ok(resp.payload.and_then(|payload| payload.accept_tos_response))
         } else {
@@ -902,56 +889,6 @@ impl Gpapi {
         let resp = ResponseWrapper::decode(&mut Cursor::new(bytes))?;
         Ok(resp)
     }
-
-    //async fn execute_request_helper_hyper(
-    //    &self,
-    //    endpoint: &str,
-    //    query: Option<HashMap<&str, String>>,
-    //    msg: Option<&[u8]>,
-    //    headers: HashMap<&str, String>,
-    //    fdfe: bool,
-    //) -> Result<Bytes, Box<dyn Error>> {
-    //    let query = if let Some(query) = query {
-    //        format!("?{}", query
-    //            .iter()
-    //            .map(|(k, v)| format!("{}={}", k, v))
-    //            .collect::<Vec<String>>()
-    //            .join("&")
-    //        )
-    //    } else {
-    //        String::from("")
-    //    };
-
-    //    let url = if fdfe {
-    //        format!("{}/fdfe/{}{}", consts::defaults::DEFAULT_BASE_URL, endpoint, query)
-    //    } else {
-    //        format!("{}/{}{}", consts::defaults::DEFAULT_BASE_URL, endpoint, query)
-    //    };
-
-    //    let mut req = if let Some(msg) = msg {
-    //        Request::builder()
-    //            .method(Method::POST)
-    //            .uri(url)
-    //            .body(Body::from(msg.to_owned()))
-    //            .unwrap()
-    //    } else {
-    //        Request::builder()
-    //            .method(Method::GET)
-    //            .uri(url)
-    //            .body(Body::empty())
-    //            .unwrap()
-    //    };
-    //    let hyper_headers = req.headers_mut();
-
-    //    for (key, val) in headers {
-    //        hyper_headers.insert(HyperHeaderName::from_bytes(key.as_bytes())?, HyperHeaderValue::from_str(&val)?);
-    //    }
-
-    //    let res = self.hyper_client.request(req).await?;
-
-    //    let body_bytes = hyper::body::to_bytes(res.into_body()).await?;
-    //    Ok(body_bytes)
-    //}
 
     async fn execute_request_helper(
         &self,
@@ -992,18 +929,14 @@ impl Gpapi {
 
         let res = {
             if let Some(msg) = msg {
-                (*self.client)
+                self.client
                     .post(url)
                     .headers(reqwest_headers)
                     .body(msg.to_owned())
                     .send()
                     .await?
             } else {
-                (*self.client)
-                    .get(url)
-                    .headers(reqwest_headers)
-                    .send()
-                    .await?
+                self.client.get(url).headers(reqwest_headers).send().await?
             }
         };
 
@@ -1030,53 +963,26 @@ struct AuthRequest {
 
 impl AuthRequest {
     fn new(email: &str, oauth_token: &str) -> Self {
-        let mut auth_request = Self::default();
-        auth_request
-            .params
-            .insert(String::from("Email"), String::from(email));
-        auth_request
-            .params
-            .insert(String::from("Token"), String::from(oauth_token));
-        auth_request
-    }
-}
-
-impl Default for AuthRequest {
-    fn default() -> Self {
-        let mut params = HashMap::new();
-        params.insert(
-            String::from("lang"),
-            String::from(consts::defaults::DEFAULT_LANGUAGE),
-        );
-        params.insert(
-            String::from("google_play_services_version"),
-            String::from(consts::defaults::DEFAULT_GOOGLE_PLAY_SERVICES_VERSION),
-        );
-        params.insert(
-            String::from("sdk_version"),
-            String::from(consts::defaults::api_user_agent::DEFAULT_SDK),
-        );
-        params.insert(
-            String::from("device_country"),
-            String::from(consts::defaults::DEFAULT_COUNTRY_CODE),
-        );
-        params.insert(String::from("Email"), String::new());
-        params.insert(
-            String::from("service"),
-            String::from(consts::defaults::DEFAULT_SERVICE),
-        );
-        params.insert(String::from("get_accountid"), String::from("1"));
-        params.insert(String::from("ACCESS_TOKEN"), String::from("1"));
-        params.insert(
-            String::from("callerPkg"),
-            String::from(consts::defaults::DEFAULT_ANDROID_VENDING),
-        );
-        params.insert(String::from("add_account"), String::from("1"));
-        params.insert(String::from("Token"), String::new());
-        params.insert(
-            String::from("callerSig"),
-            String::from(consts::defaults::DEFAULT_CALLER_SIG),
-        );
+        let params = [
+            ("lang", consts::defaults::DEFAULT_LANGUAGE),
+            (
+                "google_play_services_version",
+                consts::defaults::DEFAULT_GOOGLE_PLAY_SERVICES_VERSION,
+            ),
+            ("sdk_version", consts::defaults::api_user_agent::DEFAULT_SDK),
+            ("device_country", consts::defaults::DEFAULT_COUNTRY_CODE),
+            ("Email", email),
+            ("service", consts::defaults::DEFAULT_SERVICE),
+            ("get_accountid", "1"),
+            ("ACCESS_TOKEN", "1"),
+            ("callerPkg", consts::defaults::DEFAULT_ANDROID_VENDING),
+            ("add_account", "1"),
+            ("Token", oauth_token),
+            ("callerSig", consts::defaults::DEFAULT_CALLER_SIG),
+        ]
+        .into_iter()
+        .map(|(k, v)| (String::from(k), String::from(v)))
+        .collect();
         Self { params }
     }
 }
@@ -1109,20 +1015,22 @@ struct BuildConfiguration {
 impl BuildConfiguration {
     #[must_use]
     pub fn user_agent(&self) -> String {
-        let finsky_agent = &self.finsky_agent;
-        let finsky_version = &self.finsky_version;
-        let api = &self.api;
-        let version_code = &self.version_code;
-        let sdk = &self.sdk;
-        let device = &self.device;
-        let hardware = &self.hardware;
-        let product = &self.product;
-        let platform_version_release = &self.platform_version_release;
-        let model = &self.model;
-        let build_id = &self.build_id;
-        let is_wide_screen = &self.is_wide_screen;
-        let supported_abis = &self.supported_abis;
-        format!("{finsky_agent}/{finsky_version} (api={api},versionCode={version_code},sdk={sdk},device={device},hardware={hardware},product={product},platformVersionRelease={platform_version_release},model={model},buildId={build_id},isWideScreen={is_wide_screen},supportedAbis={supported_abis})")
+        format!(
+            "{}/{} (api={},versionCode={},sdk={},device={},hardware={},product={},platformVersionRelease={},model={},buildId={},isWideScreen={},supportedAbis={})",
+            self.finsky_agent,
+            self.finsky_version,
+            self.api,
+            self.version_code,
+            self.sdk,
+            self.device,
+            self.hardware,
+            self.product,
+            self.platform_version_release,
+            self.model,
+            self.build_id,
+            self.is_wide_screen,
+            self.supported_abis,
+        )
     }
 }
 
@@ -1140,8 +1048,8 @@ impl BuildConfiguration {
         build_id: &str,
         supported_abis: &str,
     ) -> Self {
-        use consts::defaults::api_user_agent::{DEFAULT_API, DEFAULT_IS_WIDE_SCREEN};
         use consts::defaults::DEFAULT_FINSKY_AGENT;
+        use consts::defaults::api_user_agent::{DEFAULT_API, DEFAULT_IS_WIDE_SCREEN};
 
         Self {
             finsky_agent: DEFAULT_FINSKY_AGENT.to_string(),
@@ -1175,16 +1083,22 @@ mod tests {
         assert_eq!(expected_reply, parsed_form_reply);
     }
 
-    mod gpapi {
-        use googleplay_protobuf::BulkDetailsRequest;
-
-        #[test]
-        fn test_protobuf() {
-            let _bdr = BulkDetailsRequest {
-                doc_id: vec!["test".to_string()],
-                include_child_docs: Some(true),
-                ..Default::default()
-            };
-        }
+    #[test]
+    fn user_agent_contains_device() {
+        let config = BuildConfiguration::new(
+            "1.0",
+            "100",
+            "28",
+            "device",
+            "hardware",
+            "product",
+            "release",
+            "model",
+            "build",
+            "arm64-v8a",
+        );
+        let agent = config.user_agent();
+        assert!(agent.contains("device"));
+        assert!(agent.contains("arm64-v8a"));
     }
 }

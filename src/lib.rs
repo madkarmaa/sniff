@@ -4,14 +4,10 @@ mod handlers;
 mod openapi_schema;
 mod serializable_types;
 
-use client_registry::shared_registry;
+use client_registry::{SharedClientRegistry, shared_registry};
 use openapi_schema::ApiDoc;
 use utoipa::OpenApi;
-use worker::{Context, Env, Headers, Request, Response, Result, Router, event};
-
-struct AppState {
-    client_registry: client_registry::SharedClientRegistry,
-}
+use worker::{Context, Env, Headers, Request, Response, Result, RouteContext, Router, event};
 
 const SCALAR_HTML: &str = r#"<!doctype html>
 <html>
@@ -26,6 +22,13 @@ const SCALAR_HTML: &str = r#"<!doctype html>
   </body>
 </html>"#;
 
+// Route params are guaranteed by the router; a missing one is a 500, not a 400.
+fn route_param(ctx: &RouteContext<SharedClientRegistry>, name: &str) -> Result<String> {
+    ctx.param(name)
+        .cloned()
+        .ok_or_else(|| worker::Error::RustError(format!("missing {name}")))
+}
+
 // Workers run on a single-threaded WASM runtime where `Send` futures are not
 // required. The fetch future is large because it holds the router plus cloned
 // `Env` and registry state across awaits.
@@ -34,10 +37,7 @@ const SCALAR_HTML: &str = r#"<!doctype html>
 async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
     console_error_panic_hook::set_once();
 
-    let client_registry = shared_registry(&env);
-    let state = AppState { client_registry };
-
-    let router = Router::with_data(state);
+    let router = Router::with_data(shared_registry(&env));
 
     router
         .get("/", |req, _ctx| {
@@ -62,47 +62,28 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
             Ok(Response::ok(&spec)?.with_headers(headers))
         })
         .get_async("/v1/details/:package_name", |_req, ctx| async move {
-            let Some(package_name) = ctx.param("package_name").cloned() else {
-                return Response::error("missing package_name", 400);
-            };
-            handlers::get_details_multi(package_name, ctx.data.client_registry.clone()).await
+            let package_name = route_param(&ctx, "package_name")?;
+            handlers::get_details_multi(package_name, ctx.data.clone()).await
         })
         .get_async(
             "/v1/details/:package_name/:channel",
             |_req, ctx| async move {
-                let Some(package_name) = ctx.param("package_name").cloned() else {
-                    return Response::error("missing package_name", 400);
-                };
-                let Some(channel) = ctx.param("channel").cloned() else {
-                    return Response::error("missing channel", 400);
-                };
-                handlers::get_details_single(
-                    package_name,
-                    channel,
-                    ctx.data.client_registry.clone(),
-                )
-                .await
+                let package_name = route_param(&ctx, "package_name")?;
+                let channel = route_param(&ctx, "channel")?;
+                handlers::get_details_single(package_name, channel, ctx.data.clone()).await
             },
         )
         .get_async(
             "/v1/download/:package_name/:channel/:version_code",
             |_req, ctx| async move {
-                let Some(package_name) = ctx.param("package_name").cloned() else {
-                    return Response::error("missing package_name", 400);
-                };
-                let Some(channel) = ctx.param("channel").cloned() else {
-                    return Response::error("missing channel", 400);
-                };
+                let package_name = route_param(&ctx, "package_name")?;
+                let channel = route_param(&ctx, "channel")?;
                 let version_code: i64 = ctx
                     .param("version_code")
-                    .map_or(0, |s| s.parse().unwrap_or(0));
-                handlers::get_download_info(
-                    package_name,
-                    channel,
-                    version_code,
-                    ctx.data.client_registry.clone(),
-                )
-                .await
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(0);
+                handlers::get_download_info(package_name, channel, version_code, ctx.data.clone())
+                    .await
             },
         )
         .run(req, env)

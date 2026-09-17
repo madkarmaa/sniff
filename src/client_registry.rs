@@ -2,7 +2,7 @@ use gpapi::DownloadInfo;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, OnceLock};
 use tokio::sync::Mutex;
-use worker::{console_log, Date, Env};
+use worker::{Date, Env, console_log};
 
 use crate::google_play_client::{Channel, GooglePlayClient};
 
@@ -22,10 +22,13 @@ const DOWNLOAD_TARGETS: [(&str, &str); 4] = [
 /// implement it and it panics.)
 const SESSION_TTL_MS: u64 = 1_800_000;
 
+struct ClientEntry {
+    client: GooglePlayClient,
+    logged_in_at_ms: Option<u64>,
+}
+
 pub struct ClientRegistry {
-    clients: HashMap<ClientKey, GooglePlayClient>,
-    initialized: HashMap<ClientKey, bool>,
-    logged_in_at_ms: HashMap<ClientKey, u64>,
+    clients: HashMap<ClientKey, ClientEntry>,
     env: Env,
 }
 
@@ -34,10 +37,23 @@ impl ClientRegistry {
     pub fn new(env: Env) -> Self {
         Self {
             clients: HashMap::new(),
-            initialized: HashMap::new(),
-            logged_in_at_ms: HashMap::new(),
             env,
         }
+    }
+
+    fn env_var(&self, name: &str) -> Result<String, String> {
+        self.env
+            .var(name)
+            .map_err(|e| format!("missing {name} env: {e:?}"))
+            .map(|v| v.to_string())
+    }
+
+    fn channel_credentials(&self, channel: Channel) -> Result<(String, String), String> {
+        let prefix = channel.to_string().to_uppercase();
+        Ok((
+            self.env_var(&format!("{prefix}_EMAIL"))?,
+            self.env_var(&format!("{prefix}_AAS_TOKEN"))?,
+        ))
     }
 
     /// Get a client for `channel` using the default device.
@@ -47,11 +63,7 @@ impl ClientRegistry {
     /// Returns an error if required environment configuration is missing or
     /// if the client cannot be created or initialized.
     pub async fn get_client(&mut self, channel: Channel) -> Result<&GooglePlayClient, String> {
-        let device_name = self
-            .env
-            .var("DEVICE_NAME")
-            .map_err(|e| format!("missing DEVICE_NAME env: {e:?}"))?
-            .to_string();
+        let device_name = self.env_var("DEVICE_NAME")?;
         self.get_client_for_device(channel, &device_name, &[]).await
     }
 
@@ -61,80 +73,40 @@ impl ClientRegistry {
         device_name: &str,
         supported_abis: &[&str],
     ) -> Result<&GooglePlayClient, String> {
-        let supported_abis: Vec<String> =
-            supported_abis.iter().copied().map(String::from).collect();
-        let key = (channel, device_name.to_string(), supported_abis.clone());
+        let abis: Vec<String> = supported_abis.iter().copied().map(String::from).collect();
+        let key = (channel, device_name.to_string(), abis.clone());
 
         if !self.clients.contains_key(&key) {
-            let (email, aas_token) = match channel {
-                Channel::Stable => (
-                    self.env
-                        .var("STABLE_EMAIL")
-                        .map_err(|e| format!("missing STABLE_EMAIL env: {e:?}"))?
-                        .to_string(),
-                    self.env
-                        .var("STABLE_AAS_TOKEN")
-                        .map_err(|e| format!("missing STABLE_AAS_TOKEN env: {e:?}"))?
-                        .to_string(),
-                ),
-                Channel::Beta => (
-                    self.env
-                        .var("BETA_EMAIL")
-                        .map_err(|e| format!("missing BETA_EMAIL env: {e:?}"))?
-                        .to_string(),
-                    self.env
-                        .var("BETA_AAS_TOKEN")
-                        .map_err(|e| format!("missing BETA_AAS_TOKEN env: {e:?}"))?
-                        .to_string(),
-                ),
-                Channel::Alpha => (
-                    self.env
-                        .var("ALPHA_EMAIL")
-                        .map_err(|e| format!("missing ALPHA_EMAIL env: {e:?}"))?
-                        .to_string(),
-                    self.env
-                        .var("ALPHA_AAS_TOKEN")
-                        .map_err(|e| format!("missing ALPHA_AAS_TOKEN env: {e:?}"))?
-                        .to_string(),
-                ),
-            };
-
-            let client = if supported_abis.is_empty() {
-                GooglePlayClient::new(device_name, &email, &aas_token, channel)?
-            } else {
-                GooglePlayClient::new_for_abis(
-                    device_name,
-                    &supported_abis,
-                    &email,
-                    &aas_token,
-                    channel,
-                )?
-            };
-            self.clients.insert(key.clone(), client);
-            self.initialized.insert(key.clone(), false);
+            let (email, aas_token) = self.channel_credentials(channel)?;
+            let client =
+                GooglePlayClient::new_for_abis(device_name, &abis, &email, &aas_token, channel)?;
+            self.clients.insert(
+                key.clone(),
+                ClientEntry {
+                    client,
+                    logged_in_at_ms: None,
+                },
+            );
         }
 
-        let fresh = self.initialized.get(&key).copied().unwrap_or(false)
-            && self.logged_in_at_ms.get(&key).is_some_and(|logged_in_at_ms| {
-                Date::now()
-                    .as_millis()
-                    .saturating_sub(*logged_in_at_ms)
-                    < SESSION_TTL_MS
-            });
+        let fresh = self.clients.get(&key).is_some_and(|entry| {
+            entry.logged_in_at_ms.is_some_and(|logged_in_at_ms| {
+                Date::now().as_millis().saturating_sub(logged_in_at_ms) < SESSION_TTL_MS
+            })
+        });
 
         if !fresh {
-            let client = self
+            let entry = self
                 .clients
                 .get_mut(&key)
                 .ok_or_else(|| format!("client missing for channel {channel}"))?;
-            client.initialize().await?;
-            self.initialized.insert(key.clone(), true);
-            self.logged_in_at_ms
-                .insert(key.clone(), Date::now().as_millis());
+            entry.client.initialize().await?;
+            entry.logged_in_at_ms = Some(Date::now().as_millis());
         }
 
         self.clients
             .get(&key)
+            .map(|entry| &entry.client)
             .ok_or_else(|| format!("client missing for channel {channel}"))
     }
 
@@ -156,11 +128,10 @@ impl ClientRegistry {
         }
 
         let client = self.get_client(channel).await?;
-        match client.get_details(package_name).await {
-            Ok(Some(response)) => Ok(Some((channel, response))),
-            Ok(None) => Ok(None),
-            Err(e) => Err(e),
-        }
+        client
+            .get_details(package_name)
+            .await
+            .map(|opt| opt.map(|response| (channel, response)))
     }
 
     /// Get details across all available channels.
@@ -193,41 +164,36 @@ impl ClientRegistry {
 
         // Beta/Alpha credentials are optional: if they are missing (or the
         // channel errors), skip the channel instead of failing the request.
-        if Channel::Beta.is_available_for_package(package_name) {
-            match self.get_client(Channel::Beta).await {
-                Err(e) => {
-                    console_log!("Skipping beta channel for {package_name}: {e}");
-                }
-                Ok(client) => match client.get_details(package_name).await {
-                    Ok(Some(response)) => {
-                        results.insert(Channel::Beta, response);
-                    }
-                    Err(e) => {
-                        console_log!("Error fetching {package_name} for beta channel: {e}");
-                    }
-                    Ok(None) => {}
-                },
-            }
-        }
-
-        if Channel::Alpha.is_available_for_package(package_name) {
-            match self.get_client(Channel::Alpha).await {
-                Err(e) => {
-                    console_log!("Skipping alpha channel for {package_name}: {e}");
-                }
-                Ok(client) => match client.get_details(package_name).await {
-                    Ok(Some(response)) => {
-                        results.insert(Channel::Alpha, response);
-                    }
-                    Err(e) => {
-                        console_log!("Error fetching {package_name} for alpha channel: {e}");
-                    }
-                    Ok(None) => {}
-                },
+        for channel in [Channel::Beta, Channel::Alpha] {
+            if channel.is_available_for_package(package_name) {
+                self.try_insert_optional(&mut results, package_name, channel)
+                    .await;
             }
         }
 
         Ok(results)
+    }
+
+    async fn try_insert_optional(
+        &mut self,
+        results: &mut HashMap<Channel, googleplay_protobuf::DetailsResponse>,
+        package_name: &str,
+        channel: Channel,
+    ) {
+        match self.get_client(channel).await {
+            Err(e) => {
+                console_log!("Skipping {channel} channel for {package_name}: {e}");
+            }
+            Ok(client) => match client.get_details(package_name).await {
+                Ok(Some(response)) => {
+                    results.insert(channel, response);
+                }
+                Err(e) => {
+                    console_log!("Error fetching {package_name} for {channel} channel: {e}");
+                }
+                Ok(None) => {}
+            },
+        }
     }
 
     /// Get merged download info across download targets.
@@ -256,9 +222,8 @@ impl ClientRegistry {
                 .get_client_for_device(channel, device_name, &[abi])
                 .await
             {
-                Ok(client) => {
-                    Box::pin(client.get_download_info(package_name, version_code)).await
-                }
+                // Boxed: the download future is ~90kB, too large to hold inline.
+                Ok(client) => Box::pin(client.get_download_info(package_name, version_code)).await,
                 Err(error) => Err(error),
             };
 
@@ -297,34 +262,30 @@ fn merge_download_infos(download_infos: Vec<DownloadInfo>) -> DownloadInfo {
         }
 
         for split in device_splits {
-            let key = split
-                .0
-                .clone()
-                .or_else(|| split.1.clone())
-                .unwrap_or_default();
-            if split_names.insert(key) {
-                splits.push(split);
-            }
+            push_unique(&mut splits, &mut split_names, split);
         }
 
         for file in device_additional_files {
-            let key = file
-                .0
-                .clone()
-                .or_else(|| file.1.clone())
-                .unwrap_or_default();
-            if additional_filenames.insert(key) {
-                additional_files.push(file);
-            }
+            push_unique(&mut additional_files, &mut additional_filenames, file);
         }
     }
 
-    (
-        main_apk_url,
-        splits,
-        additional_files,
-        dex_metadata_url,
-    )
+    (main_apk_url, splits, additional_files, dex_metadata_url)
+}
+
+fn push_unique(
+    target: &mut Vec<(Option<String>, Option<String>)>,
+    seen: &mut HashSet<String>,
+    item: (Option<String>, Option<String>),
+) {
+    let key = item
+        .0
+        .clone()
+        .or_else(|| item.1.clone())
+        .unwrap_or_default();
+    if seen.insert(key) {
+        target.push(item);
+    }
 }
 
 pub type SharedClientRegistry = Arc<Mutex<ClientRegistry>>;
