@@ -1,13 +1,22 @@
 use gpapi::DownloadInfo;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use worker::{console_log, Env};
 
 use crate::google_play_client::{Channel, GooglePlayClient};
 
+type ClientKey = (Channel, String, Vec<String>);
+
+const DOWNLOAD_TARGETS: [(&str, &str); 4] = [
+    ("px_9_fold", "arm64-v8a"),
+    ("sm_a13_5g", "armeabi-v7a"),
+    ("google_kiwi_x86_64", "x86"),
+    ("google_kiwi_x86_64", "x86_64"),
+];
+
 pub struct ClientRegistry {
-    clients: HashMap<Channel, GooglePlayClient>,
-    initialized: HashMap<Channel, bool>,
+    clients: HashMap<ClientKey, GooglePlayClient>,
+    initialized: HashMap<ClientKey, bool>,
     env: Env,
 }
 
@@ -21,9 +30,23 @@ impl ClientRegistry {
     }
 
     pub async fn get_client(&mut self, channel: Channel) -> Result<&GooglePlayClient, String> {
-        if !self.clients.contains_key(&channel) {
-            let device_name = self.env.var("DEVICE_NAME").unwrap().to_string();
+        let device_name = self.env.var("DEVICE_NAME").unwrap().to_string();
+        self.get_client_for_device(channel, &device_name, &[]).await
+    }
 
+    async fn get_client_for_device(
+        &mut self,
+        channel: Channel,
+        device_name: &str,
+        supported_abis: &[&str],
+    ) -> Result<&GooglePlayClient, String> {
+        let supported_abis = supported_abis
+            .iter()
+            .map(|abi| (*abi).to_string())
+            .collect::<Vec<_>>();
+        let key = (channel, device_name.to_string(), supported_abis.clone());
+
+        if !self.clients.contains_key(&key) {
             let (email, aas_token) = match channel {
                 Channel::Stable => (
                     self.env.var("STABLE_EMAIL").unwrap().to_string(),
@@ -39,18 +62,28 @@ impl ClientRegistry {
                 ),
             };
 
-            let client = GooglePlayClient::new(&device_name, &email, &aas_token, channel);
-            self.clients.insert(channel, client);
-            self.initialized.insert(channel, false);
+            let client = if supported_abis.is_empty() {
+                GooglePlayClient::new(device_name, &email, &aas_token, channel)
+            } else {
+                GooglePlayClient::new_for_abis(
+                    device_name,
+                    &supported_abis,
+                    &email,
+                    &aas_token,
+                    channel,
+                )
+            };
+            self.clients.insert(key.clone(), client);
+            self.initialized.insert(key.clone(), false);
         }
 
-        if !self.initialized.get(&channel).unwrap_or(&false) {
-            let client = self.clients.get_mut(&channel).unwrap();
+        if !self.initialized.get(&key).unwrap_or(&false) {
+            let client = self.clients.get_mut(&key).unwrap();
             client.initialize().await?;
-            self.initialized.insert(channel, true);
+            self.initialized.insert(key.clone(), true);
         }
 
-        Ok(self.clients.get(&channel).unwrap())
+        Ok(self.clients.get(&key).unwrap())
     }
 
     pub async fn get_details_with_fallback(
@@ -145,12 +178,85 @@ impl ClientRegistry {
             ));
         }
 
-        let client = self.get_client(channel).await?;
-        match client.get_download_info(package_name, version_code).await {
-            Ok(download_info) => Ok(Some((channel, download_info))),
-            Err(e) => Err(e),
+        let mut download_infos = Vec::new();
+        let mut errors = Vec::new();
+
+        for (device_name, abi) in DOWNLOAD_TARGETS {
+            let result = match self
+                .get_client_for_device(channel, device_name, &[abi])
+                .await
+            {
+                Ok(client) => client.get_download_info(package_name, version_code).await,
+                Err(error) => Err(error),
+            };
+
+            match result {
+                Ok(download_info) => download_infos.push(download_info),
+                Err(error) => {
+                    console_log!(
+                        "Error fetching {} download for {}: {}",
+                        abi,
+                        package_name,
+                        error
+                    );
+                    errors.push(format!("{}: {}", abi, error));
+                }
+            }
+        }
+
+        if download_infos.is_empty() {
+            Err(errors.join("; "))
+        } else {
+            Ok(Some((channel, merge_download_infos(download_infos))))
         }
     }
+}
+
+fn merge_download_infos(download_infos: Vec<DownloadInfo>) -> DownloadInfo {
+    let mut main_apk_url = None;
+    let mut splits = Vec::new();
+    let mut additional_files = Vec::new();
+    let mut dex_metadata_url = None;
+    let mut split_names = HashSet::new();
+    let mut additional_filenames = HashSet::new();
+
+    for (main, device_splits, device_additional_files, dex_metadata) in download_infos {
+        if main_apk_url.is_none() {
+            main_apk_url = main;
+        }
+        if dex_metadata_url.is_none() {
+            dex_metadata_url = dex_metadata;
+        }
+
+        for split in device_splits {
+            let key = split
+                .0
+                .clone()
+                .or_else(|| split.1.clone())
+                .unwrap_or_default();
+            if split_names.insert(key) {
+                splits.push(split);
+            }
+        }
+
+        for file in device_additional_files {
+            let key = file
+                .0
+                .clone()
+                .or_else(|| file.1.clone())
+                .unwrap_or_default();
+            if additional_filenames.insert(key) {
+                additional_files.push(file);
+            }
+        }
+    }
+
+    (
+        main_apk_url,
+        splits,
+        additional_files,
+        dex_metadata_url,
+    )
 }
 
 pub type SharedClientRegistry = Arc<Mutex<ClientRegistry>>;

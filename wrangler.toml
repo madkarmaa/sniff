@@ -3,7 +3,7 @@ main = "build/worker/shim.mjs"
 compatibility_date = "2025-04-25"
 
 [build]
-command = "cargo install -q worker-build && worker-build --release"
+command = "cargo install -q --locked worker-build@0.7.5 && worker-build --release"
 
 [vars]
-DEVICE_NAME="sm_a13_5g"
+DEVICE_NAME="px_9_fold"

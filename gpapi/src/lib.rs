@@ -145,6 +145,19 @@ impl Gpapi {
         self.timezone = timezone.into();
     }
 
+    /// Override the ABIs advertised to Google Play for this device.
+    ///
+    /// This must be called before `login` so the overridden device
+    /// configuration is used during check-in and device-config upload.
+    pub fn set_supported_abis<I, S>(&mut self, supported_abis: I)
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.device_properties.device_configuration.native_platform =
+            supported_abis.into_iter().map(Into::into).collect();
+    }
+
     /// Set the aas token. This can be requested via `request_aas_token`, and is required for most
     /// other actions.
     pub fn set_aas_token<S: Into<String>>(&mut self, aas_token: S) {

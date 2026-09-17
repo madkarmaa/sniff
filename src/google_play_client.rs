@@ -66,6 +66,20 @@ impl GooglePlayClient {
         Self { client, channel }
     }
 
+    pub fn new_for_abis(
+        device_name: &str,
+        supported_abis: &[String],
+        email: &str,
+        aas_token: &str,
+        channel: Channel,
+    ) -> Self {
+        let mut client = Gpapi::new(device_name, email);
+        client.set_supported_abis(supported_abis.iter().cloned());
+        client.set_aas_token(aas_token);
+
+        Self { client, channel }
+    }
+
     pub async fn initialize(&mut self) -> Result<(), String> {
         self.client
             .login()
