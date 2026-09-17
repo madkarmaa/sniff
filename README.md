@@ -252,8 +252,8 @@ channels. Then:
 
 ```bash
 bun install
-bunx --bun wrangler dev --port 8790
-curl -s -A "Mozilla/5.0" http://localhost:8790/v1/details/com.discord/stable
+bun run dev
+curl -s -A "Mozilla/5.0" http://localhost:8787/v1/details/com.discord/stable
 ```
 
 ### 3. Checks
@@ -263,23 +263,6 @@ cargo check --all
 cargo fmt --all -- --check
 cargo clippy --all -- -D warnings
 ```
-
-### 4. Deploy
-
-```bash
-bunx --bun wrangler deploy
-printf '%s' "$STABLE_AAS_TOKEN" | bunx --bun wrangler secret put STABLE_AAS_TOKEN
-# repeat for STABLE_EMAIL, BETA_*, ALPHA_*
-```
-
-CI (`.github/workflows/deploy.yml`) deploys on push to `main`, rewrites the
-`routes` pattern from the `CUSTOM_DOMAIN` repo variable, and syncs secrets from
-GitHub secrets (`STABLE_EMAIL`, `STABLE_AAS_TOKEN`, plus optional
-`BETA_*`/`ALPHA_*`).
-
-## Deployment
-
-Sniff is designed to be deployed as a Cloudflare Worker, providing global distribution and low-latency access to the API.
 
 ## Environment Variables
 

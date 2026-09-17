@@ -6,6 +6,8 @@
         "wrangler": "4.134.0"
     },
     "scripts": {
-        "format": "prettier --write --ignore-unknown ."
+        "format": "prettier --write --ignore-unknown .",
+        "dev": "wrangler dev",
+        "deploy": "wrangler deploy"
     }
 }
