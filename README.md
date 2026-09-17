@@ -16,6 +16,8 @@ sizes, and other details for Android applications.
 
 ## API Endpoints
 
+Interactive API reference is served at `/docs`.
+
 ### Get App Details (All Available Channels)
 
 ```
