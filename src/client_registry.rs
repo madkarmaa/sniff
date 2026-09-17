@@ -21,6 +21,7 @@ pub struct ClientRegistry {
 }
 
 impl ClientRegistry {
+    #[must_use]
     pub fn new(env: Env) -> Self {
         Self {
             clients: HashMap::new(),
@@ -29,8 +30,18 @@ impl ClientRegistry {
         }
     }
 
+    /// Get a client for `channel` using the default device.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if required environment configuration is missing or
+    /// if the client cannot be created or initialized.
     pub async fn get_client(&mut self, channel: Channel) -> Result<&GooglePlayClient, String> {
-        let device_name = self.env.var("DEVICE_NAME").unwrap().to_string();
+        let device_name = self
+            .env
+            .var("DEVICE_NAME")
+            .map_err(|e| format!("missing DEVICE_NAME env: {e:?}"))?
+            .to_string();
         self.get_client_for_device(channel, &device_name, &[]).await
     }
 
@@ -40,30 +51,46 @@ impl ClientRegistry {
         device_name: &str,
         supported_abis: &[&str],
     ) -> Result<&GooglePlayClient, String> {
-        let supported_abis = supported_abis
-            .iter()
-            .map(|abi| (*abi).to_string())
-            .collect::<Vec<_>>();
+        let supported_abis: Vec<String> =
+            supported_abis.iter().copied().map(String::from).collect();
         let key = (channel, device_name.to_string(), supported_abis.clone());
 
         if !self.clients.contains_key(&key) {
             let (email, aas_token) = match channel {
                 Channel::Stable => (
-                    self.env.var("STABLE_EMAIL").unwrap().to_string(),
-                    self.env.var("STABLE_AAS_TOKEN").unwrap().to_string(),
+                    self.env
+                        .var("STABLE_EMAIL")
+                        .map_err(|e| format!("missing STABLE_EMAIL env: {e:?}"))?
+                        .to_string(),
+                    self.env
+                        .var("STABLE_AAS_TOKEN")
+                        .map_err(|e| format!("missing STABLE_AAS_TOKEN env: {e:?}"))?
+                        .to_string(),
                 ),
                 Channel::Beta => (
-                    self.env.var("BETA_EMAIL").unwrap().to_string(),
-                    self.env.var("BETA_AAS_TOKEN").unwrap().to_string(),
+                    self.env
+                        .var("BETA_EMAIL")
+                        .map_err(|e| format!("missing BETA_EMAIL env: {e:?}"))?
+                        .to_string(),
+                    self.env
+                        .var("BETA_AAS_TOKEN")
+                        .map_err(|e| format!("missing BETA_AAS_TOKEN env: {e:?}"))?
+                        .to_string(),
                 ),
                 Channel::Alpha => (
-                    self.env.var("ALPHA_EMAIL").unwrap().to_string(),
-                    self.env.var("ALPHA_AAS_TOKEN").unwrap().to_string(),
+                    self.env
+                        .var("ALPHA_EMAIL")
+                        .map_err(|e| format!("missing ALPHA_EMAIL env: {e:?}"))?
+                        .to_string(),
+                    self.env
+                        .var("ALPHA_AAS_TOKEN")
+                        .map_err(|e| format!("missing ALPHA_AAS_TOKEN env: {e:?}"))?
+                        .to_string(),
                 ),
             };
 
             let client = if supported_abis.is_empty() {
-                GooglePlayClient::new(device_name, &email, &aas_token, channel)
+                GooglePlayClient::new(device_name, &email, &aas_token, channel)?
             } else {
                 GooglePlayClient::new_for_abis(
                     device_name,
@@ -71,21 +98,32 @@ impl ClientRegistry {
                     &email,
                     &aas_token,
                     channel,
-                )
+                )?
             };
             self.clients.insert(key.clone(), client);
             self.initialized.insert(key.clone(), false);
         }
 
-        if !self.initialized.get(&key).unwrap_or(&false) {
-            let client = self.clients.get_mut(&key).unwrap();
+        if !self.initialized.get(&key).copied().unwrap_or(false) {
+            let client = self
+                .clients
+                .get_mut(&key)
+                .ok_or_else(|| format!("client missing for channel {channel}"))?;
             client.initialize().await?;
             self.initialized.insert(key.clone(), true);
         }
 
-        Ok(self.clients.get(&key).unwrap())
+        self.clients
+            .get(&key)
+            .ok_or_else(|| format!("client missing for channel {channel}"))
     }
 
+    /// Get details for `package_name` on `channel`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the channel is unavailable for the package or if
+    /// the underlying client request fails.
     pub async fn get_details_with_fallback(
         &mut self,
         package_name: &str,
@@ -93,8 +131,7 @@ impl ClientRegistry {
     ) -> Result<Option<(Channel, googleplay_protobuf::DetailsResponse)>, String> {
         if !channel.is_available_for_package(package_name) {
             return Err(format!(
-                "Channel '{}' is not available for package '{}'",
-                channel, package_name
+                "Channel '{channel}' is not available for package '{package_name}'"
             ));
         }
 
@@ -106,6 +143,12 @@ impl ClientRegistry {
         }
     }
 
+    /// Get details across all available channels.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the stable channel lookup fails or the app is not
+    /// found.
     pub async fn get_details_multi(
         &mut self,
         package_name: &str,
@@ -120,10 +163,10 @@ impl ClientRegistry {
                 results.insert(Channel::Stable, response);
             }
             Ok(None) => {
-                return Err(format!("App '{}' not found", package_name));
+                return Err(format!("App '{package_name}' not found"));
             }
             Err(e) => {
-                console_log!("Error fetching {} for stable channel: {}", package_name, e);
+                console_log!("Error fetching {package_name} for stable channel: {e}");
                 return Err(e);
             }
         }
@@ -139,7 +182,7 @@ impl ClientRegistry {
                     results.insert(Channel::Beta, response);
                 }
                 Err(e) => {
-                    console_log!("Error fetching {} for beta channel: {}", package_name, e);
+                    console_log!("Error fetching {package_name} for beta channel: {e}");
                 }
                 _ => {}
             }
@@ -156,7 +199,7 @@ impl ClientRegistry {
                     results.insert(Channel::Alpha, response);
                 }
                 Err(e) => {
-                    console_log!("Error fetching {} for alpha channel: {}", package_name, e);
+                    console_log!("Error fetching {package_name} for alpha channel: {e}");
                 }
                 _ => {}
             }
@@ -165,6 +208,12 @@ impl ClientRegistry {
         Ok(results)
     }
 
+    /// Get merged download info across download targets.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the channel is unavailable for the package or if
+    /// all per-ABI download attempts fail.
     pub async fn get_download_info(
         &mut self,
         package_name: &str,
@@ -173,8 +222,7 @@ impl ClientRegistry {
     ) -> Result<Option<(Channel, DownloadInfo)>, String> {
         if !channel.is_available_for_package(package_name) {
             return Err(format!(
-                "Channel '{}' is not available for package '{}'",
-                channel, package_name
+                "Channel '{channel}' is not available for package '{package_name}'"
             ));
         }
 
@@ -186,20 +234,17 @@ impl ClientRegistry {
                 .get_client_for_device(channel, device_name, &[abi])
                 .await
             {
-                Ok(client) => client.get_download_info(package_name, version_code).await,
+                Ok(client) => {
+                    Box::pin(client.get_download_info(package_name, version_code)).await
+                }
                 Err(error) => Err(error),
             };
 
             match result {
                 Ok(download_info) => download_infos.push(download_info),
                 Err(error) => {
-                    console_log!(
-                        "Error fetching {} download for {}: {}",
-                        abi,
-                        package_name,
-                        error
-                    );
-                    errors.push(format!("{}: {}", abi, error));
+                    console_log!("Error fetching {abi} download for {package_name}: {error}");
+                    errors.push(format!("{abi}: {error}"));
                 }
             }
         }
@@ -212,6 +257,7 @@ impl ClientRegistry {
     }
 }
 
+#[must_use]
 fn merge_download_infos(download_infos: Vec<DownloadInfo>) -> DownloadInfo {
     let mut main_apk_url = None;
     let mut splits = Vec::new();

@@ -1,3 +1,8 @@
+// The `option_if_let_else` nursery lint fires on `serde`/`utoipa` derive
+// expansions for `Option` fields; the reported spans point at the field
+// definitions even though there is no `if let/else` in hand-written code.
+#![allow(clippy::option_if_let_else)]
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use utoipa::{OpenApi, ToSchema};
@@ -47,6 +52,7 @@ use utoipa::{OpenApi, ToSchema};
 pub struct ApiDoc;
 
 #[derive(Serialize, Deserialize, ToSchema)]
+#[allow(clippy::option_if_let_else)]
 pub struct ApiResponse<T> {
     pub success: bool,
     pub data: Option<T>,
@@ -54,6 +60,7 @@ pub struct ApiResponse<T> {
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
+#[allow(clippy::option_if_let_else)]
 pub struct MultiChannelApiResponse<T> {
     pub success: bool,
     pub data: Option<HashMap<String, T>>,
@@ -84,9 +91,9 @@ pub struct MultiChannelApiResponse<T> {
         "details": {
             "app_details": {
                 "developer_name": "Discord Inc.",
-                "version_code": 289020,
+                "version_code": 289_020,
                 "version_string": "289.20 - Stable",
-                "info_download_size": 180070862,
+                "info_download_size": 180_070_862,
                 "developer_email": "support@discord.com",
                 "developer_website": "https://dis.gd/contact",
                 "info_download": "500,000,000+ downloads",
@@ -204,11 +211,11 @@ pub struct DocumentDetails {
 pub struct AppDetails {
     #[schema(example = "Discord Inc.")]
     pub developer_name: Option<String>,
-    #[schema(example = 289020)]
+    #[schema(example = 289_020)]
     pub version_code: Option<i32>,
     #[schema(example = "289.20 - Stable")]
     pub version_string: Option<String>,
-    #[schema(example = 180070862)]
+    #[schema(example = 180_070_862)]
     pub info_download_size: Option<i64>,
     #[schema(example = "support@discord.com")]
     pub developer_email: Option<String>,
@@ -226,6 +233,7 @@ pub struct AppDetails {
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
+#[allow(clippy::struct_field_names)]
 pub struct Offer {
     #[schema(example = 0)]
     pub micros: Option<i64>,
@@ -235,6 +243,7 @@ pub struct Offer {
     pub formatted_amount: Option<String>,
     #[schema(example = false)]
     pub checkout_flow_required: Option<bool>,
+    // Field name matches the upstream Play API / protobuf JSON name.
     #[schema(example = 1)]
     pub offer_type: Option<i32>,
 }
@@ -278,7 +287,7 @@ impl From<gpapi::DownloadInfo> for DownloadInfo {
             })
             .collect();
 
-        DownloadInfo {
+        Self {
             main_apk_url,
             splits,
             additional_files,

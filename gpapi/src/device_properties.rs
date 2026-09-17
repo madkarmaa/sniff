@@ -15,7 +15,8 @@ struct DeviceProperties {
 
 #[allow(dead_code)]
 impl EncodedDeviceProperties {
-    pub fn new(
+    #[must_use]
+    pub const fn new(
         device_configuration: Vec<u8>,
         android_checkin: Vec<u8>,
         extra_info: HashMap<String, String>,
@@ -27,17 +28,13 @@ impl EncodedDeviceProperties {
         }
     }
 
-    pub fn into_decoded(self) -> DeviceProperties {
-        DeviceProperties {
-            device_configuration: DeviceConfigurationProto::decode(&mut Cursor::new(
-                &self.device_configuration.clone(),
-            ))
-            .unwrap(),
-            android_checkin: AndroidCheckinProto::decode(&mut Cursor::new(
-                &self.android_checkin.clone(),
-            ))
-            .unwrap(),
+    pub fn into_decoded(self) -> Result<DeviceProperties, prost::DecodeError> {
+        Ok(DeviceProperties {
+            device_configuration: DeviceConfigurationProto::decode(
+                self.device_configuration.as_slice(),
+            )?,
+            android_checkin: AndroidCheckinProto::decode(self.android_checkin.as_slice())?,
             extra_info: self.extra_info,
-        }
+        })
     }
 }

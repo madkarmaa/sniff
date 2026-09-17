@@ -58,7 +58,7 @@ mod details_response_serde {
     struct SerializableDocumentDetails<'a>(&'a DocumentDetails);
     struct SerializableOffer<'a>(&'a Offer);
 
-    impl<'a> serde::Serialize for SerializableItem<'a> {
+    impl serde::Serialize for SerializableItem<'_> {
         fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
             S: Serializer,
@@ -144,7 +144,7 @@ mod details_response_serde {
         }
     }
 
-    impl<'a> serde::Serialize for SerializableDiscoveryBadge<'a> {
+    impl serde::Serialize for SerializableDiscoveryBadge<'_> {
         fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
             S: Serializer,
@@ -211,7 +211,7 @@ mod details_response_serde {
         }
     }
 
-    impl<'a> serde::Serialize for SerializableFeatures<'a> {
+    impl serde::Serialize for SerializableFeatures<'_> {
         fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
             S: Serializer,
@@ -241,7 +241,7 @@ mod details_response_serde {
         }
     }
 
-    impl<'a> serde::Serialize for SerializableFeature<'a> {
+    impl serde::Serialize for SerializableFeature<'_> {
         fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
             S: Serializer,
@@ -261,7 +261,7 @@ mod details_response_serde {
         }
     }
 
-    impl<'a> serde::Serialize for SerializablePlayerBadge<'a> {
+    impl serde::Serialize for SerializablePlayerBadge<'_> {
         fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
             S: Serializer,
@@ -277,7 +277,7 @@ mod details_response_serde {
         }
     }
 
-    impl<'a> serde::Serialize for SerializableDiscoveryBadgeLink<'a> {
+    impl serde::Serialize for SerializableDiscoveryBadgeLink<'_> {
         fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
             S: Serializer,
@@ -293,7 +293,7 @@ mod details_response_serde {
         }
     }
 
-    impl<'a> serde::Serialize for SerializableImage<'a> {
+    impl serde::Serialize for SerializableImage<'_> {
         fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
             S: Serializer,
@@ -309,7 +309,7 @@ mod details_response_serde {
         }
     }
 
-    impl<'a> serde::Serialize for SerializableLink<'a> {
+    impl serde::Serialize for SerializableLink<'_> {
         fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
             S: Serializer,
@@ -325,7 +325,7 @@ mod details_response_serde {
         }
     }
 
-    impl<'a> serde::Serialize for SerializableAppInfo<'a> {
+    impl serde::Serialize for SerializableAppInfo<'_> {
         fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
             S: Serializer,
@@ -351,7 +351,7 @@ mod details_response_serde {
         }
     }
 
-    impl<'a> serde::Serialize for SerializableAppInfoSection<'a> {
+    impl serde::Serialize for SerializableAppInfoSection<'_> {
         fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
             S: Serializer,
@@ -371,7 +371,7 @@ mod details_response_serde {
         }
     }
 
-    impl<'a> serde::Serialize for SerializableAppInfoContainer<'a> {
+    impl serde::Serialize for SerializableAppInfoContainer<'_> {
         fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
             S: Serializer,
@@ -391,7 +391,7 @@ mod details_response_serde {
         }
     }
 
-    impl<'a> serde::Serialize for SerializableAppDetails<'a> {
+    impl serde::Serialize for SerializableAppDetails<'_> {
         fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
             S: Serializer,
@@ -467,7 +467,7 @@ mod details_response_serde {
         }
     }
 
-    impl<'a> serde::Serialize for SerializableDocumentDetails<'a> {
+    impl serde::Serialize for SerializableDocumentDetails<'_> {
         fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
             S: Serializer,
@@ -483,7 +483,7 @@ mod details_response_serde {
         }
     }
 
-    impl<'a> serde::Serialize for SerializableOffer<'a> {
+    impl serde::Serialize for SerializableOffer<'_> {
         fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
             S: Serializer,
@@ -533,11 +533,7 @@ mod details_response_serde {
             }
 
             if !offer.promotion_label.is_empty() {
-                let promotion_labels: Vec<String> = offer
-                    .promotion_label
-                    .iter()
-                    .map(|label| label.to_string())
-                    .collect();
+                let promotion_labels: Vec<String> = offer.promotion_label.clone();
                 state.serialize_field("promotion_label", &promotion_labels)?;
             }
 

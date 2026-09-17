@@ -7,7 +7,7 @@ use crate::openapi_schema::{
 };
 use crate::serializable_types::SerializableDetailsResponse as ActualSerializableDetailsResponse;
 use std::collections::HashMap;
-use worker::*;
+use worker::{Headers, Response, Result};
 
 #[utoipa::path(
     get,
@@ -27,14 +27,21 @@ use worker::*;
     ),
     tag = "App Details"
 )]
+// Workers run on a single-threaded WASM runtime where `Send` futures are not
+// required; the registry holds `worker::Env` (`JsValue`) which is `!Send`.
+#[allow(clippy::future_not_send)]
+/// Fetch details across all channels.
+///
+/// # Errors
+///
+/// Returns a worker error if JSON serialization or header manipulation fails.
 pub async fn get_details_multi(
     package_name: String,
     client_registry: SharedClientRegistry,
 ) -> Result<Response> {
-    #[allow(clippy::await_holding_lock)]
     match client_registry
         .lock()
-        .expect("Failed to lock client registry")
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .get_details_multi(&package_name)
         .await
     {
@@ -90,6 +97,14 @@ pub async fn get_details_multi(
     ),
     tag = "App Details"
 )]
+// Workers run on a single-threaded WASM runtime where `Send` futures are not
+// required; the registry holds `worker::Env` (`JsValue`) which is `!Send`.
+#[allow(clippy::future_not_send)]
+/// Fetch details for a single channel.
+///
+/// # Errors
+///
+/// Returns a worker error if JSON serialization fails.
 pub async fn get_details_single(
     package_name: String,
     channel: String,
@@ -109,7 +124,7 @@ pub async fn get_details_single(
 
     let result = client_registry
         .lock()
-        .expect("Failed to lock client registry")
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .get_details_with_fallback(&package_name, channel)
         .await;
 
@@ -126,7 +141,7 @@ pub async fn get_details_single(
             let response = ApiResponse::<ActualSerializableDetailsResponse> {
                 success: false,
                 data: None,
-                error: Some(format!("App '{}' not found", package_name)),
+                error: Some(format!("App '{package_name}' not found")),
             };
             Ok(Response::from_json(&response)?.with_status(404))
         }
@@ -157,6 +172,16 @@ pub async fn get_details_single(
     ),
     tag = "Downloads"
 )]
+// Workers run on a single-threaded WASM runtime where `Send` futures are not
+// required. The future is large because it holds merged `Gpapi` download
+// state across several device targets; heap-allocating would add indirection
+// for little benefit on this endpoint.
+#[allow(clippy::future_not_send, clippy::large_futures)]
+/// Fetch merged download info.
+///
+/// # Errors
+///
+/// Returns a worker error if JSON serialization fails.
 pub async fn get_download_info(
     package_name: String,
     channel: String,
@@ -177,7 +202,7 @@ pub async fn get_download_info(
 
     let result = client_registry
         .lock()
-        .expect("Failed to lock client registry")
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .get_download_info(&package_name, channel, Some(version_code))
         .await;
 
@@ -195,7 +220,7 @@ pub async fn get_download_info(
             let response = ApiResponse::<DownloadInfo> {
                 success: false,
                 data: None,
-                error: Some(format!("App '{}' not found", package_name)),
+                error: Some(format!("App '{package_name}' not found")),
             };
             Ok(Response::from_json(&response)?.with_status(404))
         }

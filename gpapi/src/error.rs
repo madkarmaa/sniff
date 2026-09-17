@@ -24,42 +24,44 @@ pub struct Error {
 }
 
 impl Error {
-    pub fn new(k: ErrorKind) -> Error {
-        Error { kind: k }
+    #[must_use]
+    pub const fn new(k: ErrorKind) -> Self {
+        Self { kind: k }
     }
 
-    pub fn kind(&self) -> &ErrorKind {
+    #[must_use]
+    pub const fn kind(&self) -> &ErrorKind {
         &self.kind
     }
 }
 
 impl From<IOError> for Error {
-    fn from(err: IOError) -> Error {
-        Error {
+    fn from(err: IOError) -> Self {
+        Self {
             kind: ErrorKind::IO(err),
         }
     }
 }
 
 impl From<Box<dyn StdError + Send + Sync>> for Error {
-    fn from(err: Box<dyn StdError + Send + Sync>) -> Error {
-        Error {
+    fn from(err: Box<dyn StdError + Send + Sync>) -> Self {
+        Self {
             kind: ErrorKind::Other(err),
         }
     }
 }
 
 impl From<&str> for Error {
-    fn from(err: &str) -> Error {
-        Error {
+    fn from(err: &str) -> Self {
+        Self {
             kind: ErrorKind::Str(err.to_string()),
         }
     }
 }
 
 impl From<String> for Error {
-    fn from(err: String) -> Error {
-        Error {
+    fn from(err: String) -> Self {
+        Self {
             kind: ErrorKind::Str(err),
         }
     }
