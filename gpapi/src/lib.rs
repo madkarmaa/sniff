@@ -335,14 +335,13 @@ impl Gpapi {
             self.execute_request("purchase", Some(params), Some(&[]), headers)
                 .await?
         };
-        if let Some(payload) = resp.payload {
-            if let Some(buy_response) = payload.buy_response {
-                if let Some(delivery_token) = buy_response.encoded_delivery_token {
-                    return self
-                        .delivery(&pkg_name, Some(version_code), &delivery_token)
-                        .await;
-                }
-            }
+        if let Some(payload) = resp.payload
+            && let Some(buy_response) = payload.buy_response
+            && let Some(delivery_token) = buy_response.encoded_delivery_token
+        {
+            return self
+                .delivery(&pkg_name, Some(version_code), &delivery_token)
+                .await;
         }
         Err(Box::new(GpapiError::new(GpapiErrorKind::InvalidApp)))
     }
@@ -372,42 +371,41 @@ impl Gpapi {
             self.execute_request("delivery", Some(req), None, self.get_default_headers()?)
                 .await?
         };
-        if let Some(payload) = resp.payload {
-            if let Some(delivery_response) = payload.delivery_response {
-                if let Some(app_delivery_data) = delivery_response.app_delivery_data {
-                    let mut splits = Vec::new();
-                    for app_split_delivery_data in app_delivery_data.split_delivery_data {
-                        splits.push((
-                            app_split_delivery_data.name,
-                            app_split_delivery_data.download_url,
-                        ));
-                    }
-                    let mut additional_files: Vec<(Option<String>, Option<String>)> = Vec::new();
-                    for additional_file in app_delivery_data.additional_file {
-                        if let Some(file_type) = additional_file.file_type {
-                            if let Some(version_code) = additional_file.version_code {
-                                let main_patch = match file_type {
-                                    0 => "main",
-                                    _ => "patch",
-                                };
-                                let filename =
-                                    format!("{main_patch}.{version_code}.{pkg_name}.obb");
-                                additional_files
-                                    .push((Some(filename), additional_file.download_url));
-                            }
-                        }
-                    }
-                    let dex_metadata_url = app_delivery_data
-                        .dex_metadata
-                        .and_then(|dex_metadata| dex_metadata.download_url);
-                    return Ok((
-                        app_delivery_data.download_url,
-                        splits,
-                        additional_files,
-                        dex_metadata_url,
-                    ));
+        if let Some(payload) = resp.payload
+            && let Some(delivery_response) = payload.delivery_response
+            && let Some(app_delivery_data) = delivery_response.app_delivery_data
+        {
+            let mut splits = Vec::new();
+            for app_split_delivery_data in app_delivery_data.split_delivery_data {
+                splits.push((
+                    app_split_delivery_data.name,
+                    app_split_delivery_data.download_url,
+                ));
+            }
+            let mut additional_files: Vec<(Option<String>, Option<String>)> = Vec::new();
+            for additional_file in app_delivery_data.additional_file {
+                if let Some(file_type) = additional_file.file_type
+                    && let Some(version_code) = additional_file.version_code
+                {
+                    let main_patch = match file_type {
+                        0 => "main",
+                        _ => "patch",
+                    };
+                    let filename =
+                        format!("{main_patch}.{version_code}.{pkg_name}.obb");
+                    additional_files
+                        .push((Some(filename), additional_file.download_url));
                 }
             }
+            let dex_metadata_url = app_delivery_data
+                .dex_metadata
+                .and_then(|dex_metadata| dex_metadata.download_url);
+            return Ok((
+                app_delivery_data.download_url,
+                splits,
+                additional_files,
+                dex_metadata_url,
+            ));
         }
         Err(Box::new(GpapiError::new(GpapiErrorKind::InvalidApp)))
     }
@@ -416,16 +414,13 @@ impl Gpapi {
         &self,
         pkg_name: &str,
     ) -> Result<i64, Box<dyn Error + Send + Sync>> {
-        if let Some(details) = self.details(pkg_name).await? {
-            if let Some(item) = details.item {
-                if let Some(details) = item.details {
-                    if let Some(app_details) = details.app_details {
-                        if let Some(version_code) = app_details.version_code {
-                            return Ok(version_code);
-                        }
-                    }
-                }
-            }
+        if let Some(details) = self.details(pkg_name).await?
+            && let Some(item) = details.item
+            && let Some(details) = item.details
+            && let Some(app_details) = details.app_details
+            && let Some(version_code) = app_details.version_code
+        {
+            return Ok(version_code);
         }
         Err(Box::new(GpapiError::new(GpapiErrorKind::InvalidApp)))
     }
