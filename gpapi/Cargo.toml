@@ -30,3 +30,6 @@ bincode = "2"
 configparser = "3"
 serde = { version = "1", features = ["derive"] }
 bytes = "1"
+
+[lints]
+workspace = true

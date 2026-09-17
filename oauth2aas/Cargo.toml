@@ -6,3 +6,6 @@ edition = "2021"
 [dependencies]
 gpapi = "6.0.0"
 tokio = "1.39.2"
+
+[lints]
+workspace = true

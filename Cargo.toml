@@ -25,9 +25,28 @@ gpapi = { path = "./gpapi" }
 googleplay-protobuf = "3"
 
 serde = { version = "1.0.219", features = ["derive"] }
-lazy_static = "1.5.0"
 
 utoipa = { version = "5.4", features = ["axum_extras"] }
 
 [workspace]
 members = ["gpapi", "oauth2aas"]
+
+[workspace.lints.clippy]
+pedantic = { level = "deny", priority = -1 }
+nursery = { level = "deny", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+indexing_slicing = "deny"
+arithmetic_side_effects = "deny"
+unreachable = "deny"
+unimplemented = "deny"
+unchecked_time_subtraction = "deny"
+todo = "deny"
+string_slice = "deny"
+panic_in_result_fn = "deny"
+panic = "deny"
+exit = "deny"
+as_conversions = "deny"
+
+[lints]
+workspace = true
