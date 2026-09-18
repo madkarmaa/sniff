@@ -17,14 +17,14 @@ prost = "0.14"
 reqwest = "0.13"
 bytes = "1"
 googleplay-protobuf = "3"
-bincode = "2"
+bincode = "2" # 3.0.0 is an uncompilable stub crate, do not bump
 futures = "0.3"
 serde = { version = "1", features = ["derive"] }
 
 [build-dependencies]
 googleplay-protobuf = "3"
 prost = "0.14"
-bincode = "2"
+bincode = "2" # 3.0.0 is an uncompilable stub crate, do not bump
 configparser = "3"
 serde = { version = "1", features = ["derive"] }
 bytes = "1"

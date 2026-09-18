@@ -18,7 +18,7 @@ const SCALAR_HTML: &str = r#"<!doctype html>
   </head>
   <body>
     <script id="api-reference" data-url="/openapi.json"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.69.0"></script>
   </body>
 </html>"#;
 

@@ -2,7 +2,7 @@
     "name": "sniff",
     "private": true,
     "devDependencies": {
-        "prettier": "3.9.7",
+        "prettier": "3.9.8",
         "wrangler": "4.134.0"
     },
     "scripts": {
