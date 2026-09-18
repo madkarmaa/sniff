@@ -19,6 +19,7 @@ use utoipa::{OpenApi, ToSchema};
             ApiResponse<SerializableDetailsResponse>,
             MultiChannelApiResponse<SerializableDetailsResponse>,
             ApiResponse<DownloadInfo>,
+            ErrorResponse,
             SerializableDetailsResponse,
             DownloadInfo,
             SplitFile,
@@ -66,6 +67,20 @@ pub struct MultiChannelApiResponse<T> {
     pub success: bool,
     pub data: Option<HashMap<String, T>>,
     pub error: Option<String>,
+}
+
+/// Error envelope. Matches the runtime error shape exactly: `data` is
+/// always `null` here, only `error` carries the message.
+#[derive(Serialize, Deserialize, ToSchema)]
+#[schema(example = json!({
+    "success": false,
+    "data": null,
+    "error": "App 'com.example' not found"
+}))]
+pub struct ErrorResponse {
+    pub success: bool,
+    pub data: Option<String>,
+    pub error: String,
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]

@@ -3,7 +3,7 @@
 use crate::client_registry::SharedClientRegistry;
 use crate::google_play_client::Channel;
 use crate::openapi_schema::{
-    ApiResponse, DownloadInfo, MultiChannelApiResponse, SerializableDetailsResponse,
+    ApiResponse, DownloadInfo, ErrorResponse, MultiChannelApiResponse, SerializableDetailsResponse,
 };
 use crate::serializable_types::SerializableDetailsResponse as JsonDetails;
 use std::collections::HashMap;
@@ -30,10 +30,48 @@ fn error_response(status: u16, message: String) -> Result<Response> {
          body = MultiChannelApiResponse<SerializableDetailsResponse>,
          headers(
              ("X-Available-Channels" = String, description = "Comma-separated list of available channels")
-         )
+         ),
+         example = json!({
+             "success": true,
+             "data": {
+                 "stable": {
+                     "item": {
+                         "id": "com.discord",
+                         "type": 1,
+                         "title": "Discord - Talk, Play, Hang Out",
+                         "creator": "Discord Inc.",
+                         "details": {
+                             "app_details": {
+                                 "developer_name": "Discord Inc.",
+                                 "version_code": 289_020,
+                                 "version_string": "289.20 - Stable",
+                                 "package_name": "com.discord"
+                             }
+                         }
+                     },
+                     "footer_html": "All prices include VAT.",
+                     "enable_reviews": true
+                 }
+             },
+             "error": null
+         })
         ),
-        (status = 404, description = "App not found", body = MultiChannelApiResponse<SerializableDetailsResponse>),
-        (status = 500, description = "Internal server error", body = MultiChannelApiResponse<SerializableDetailsResponse>)
+        (status = 404, description = "App not found",
+         body = ErrorResponse,
+         example = json!({
+             "success": false,
+             "data": null,
+             "error": "App 'com.discord' not found"
+         })
+        ),
+        (status = 500, description = "Internal server error",
+         body = ErrorResponse,
+         example = json!({
+             "success": false,
+             "data": null,
+             "error": "Login error for stable channel: Invalid app response"
+         })
+        )
     ),
     tag = "App Details"
 )]
@@ -55,7 +93,7 @@ pub async fn get_details_multi(
         .get_details_multi(&package_name)
         .await
     {
-        Ok(details_map) => {
+        Ok(Some(details_map)) => {
             let serialized_map: HashMap<String, JsonDetails> = details_map
                 .into_iter()
                 .map(|(channel, details)| (channel.to_string(), JsonDetails(details)))
@@ -75,6 +113,7 @@ pub async fn get_details_multi(
 
             Ok(Response::from_json(&response)?.with_headers(headers))
         }
+        Ok(None) => error_response(404, format!("App '{package_name}' not found")),
         Err(e) => error_response(500, e),
     }
 }
@@ -87,10 +126,55 @@ pub async fn get_details_multi(
         ("channel" = String, Path, description = "Release channel", example = "stable")
     ),
     responses(
-        (status = 200, description = "App details retrieved successfully", body = ApiResponse<SerializableDetailsResponse>),
-        (status = 400, description = "Invalid channel", body = ApiResponse<String>),
-        (status = 404, description = "App not found", body = ApiResponse<SerializableDetailsResponse>),
-        (status = 500, description = "Internal server error", body = ApiResponse<SerializableDetailsResponse>)
+        (status = 200, description = "App details retrieved successfully",
+         body = ApiResponse<SerializableDetailsResponse>,
+         example = json!({
+             "success": true,
+             "data": {
+                 "item": {
+                     "id": "com.discord",
+                     "type": 1,
+                     "title": "Discord - Talk, Play, Hang Out",
+                     "creator": "Discord Inc.",
+                     "details": {
+                         "app_details": {
+                             "developer_name": "Discord Inc.",
+                             "version_code": 289_020,
+                             "version_string": "289.20 - Stable",
+                             "package_name": "com.discord"
+                         }
+                     }
+                 },
+                 "footer_html": "All prices include VAT.",
+                 "enable_reviews": true
+             },
+             "error": null
+         })
+        ),
+        (status = 400, description = "Invalid channel",
+         body = ErrorResponse,
+         example = json!({
+             "success": false,
+             "data": null,
+             "error": "Invalid Channel: snapshot"
+         })
+        ),
+        (status = 404, description = "App not found",
+         body = ErrorResponse,
+         example = json!({
+             "success": false,
+             "data": null,
+             "error": "App 'com.discord' not found"
+         })
+        ),
+        (status = 500, description = "Internal server error",
+         body = ErrorResponse,
+         example = json!({
+             "success": false,
+             "data": null,
+             "error": "API error for stable channel: Invalid app response"
+         })
+        )
     ),
     tag = "App Details"
 )]
@@ -141,10 +225,52 @@ pub async fn get_details_single(
         ("version_code" = i32, Path, description = "Android version code")
     ),
     responses(
-        (status = 200, description = "Download info retrieved successfully", body = ApiResponse<DownloadInfo>),
-        (status = 400, description = "Invalid parameters", body = ApiResponse<String>),
-        (status = 404, description = "App or version not found", body = ApiResponse<DownloadInfo>),
-        (status = 500, description = "Internal server error", body = ApiResponse<DownloadInfo>)
+        (status = 200, description = "Download info retrieved successfully",
+         body = ApiResponse<DownloadInfo>,
+         example = json!({
+             "success": true,
+             "data": {
+                 "main_apk_url": "https://play.googleapis.com/download/by-token/download?token=AOTCm0Q...",
+                 "splits": [
+                     {
+                         "name": "config.arm64_v8a",
+                         "download_url": "https://play.googleapis.com/download/by-token/download?token=AOTCm0R..."
+                     },
+                     {
+                         "name": "config.en",
+                         "download_url": "https://play.googleapis.com/download/by-token/download?token=AOTCm0S..."
+                     }
+                 ],
+                 "additional_files": [],
+                 "dex_metadata_url": null
+             },
+             "error": null
+         })
+        ),
+        (status = 400, description = "Invalid parameters",
+         body = ErrorResponse,
+         example = json!({
+             "success": false,
+             "data": null,
+             "error": "Invalid Channel: snapshot"
+         })
+        ),
+        (status = 404, description = "App or version not found",
+         body = ErrorResponse,
+         example = json!({
+             "success": false,
+             "data": null,
+             "error": "App 'com.discord' not found"
+         })
+        ),
+        (status = 500, description = "Internal server error",
+         body = ErrorResponse,
+         example = json!({
+             "success": false,
+             "data": null,
+             "error": "API error for stable channel: Invalid app response"
+         })
+        )
     ),
     tag = "Downloads"
 )]

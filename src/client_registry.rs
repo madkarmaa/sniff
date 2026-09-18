@@ -136,14 +136,15 @@ impl ClientRegistry {
 
     /// Get details across all available channels.
     ///
+    /// Returns `Ok(None)` when the app is not found on the stable channel.
+    ///
     /// # Errors
     ///
-    /// Returns an error if the stable channel lookup fails or the app is not
-    /// found.
+    /// Returns an error if the stable channel lookup fails.
     pub async fn get_details_multi(
         &mut self,
         package_name: &str,
-    ) -> Result<HashMap<Channel, googleplay_protobuf::DetailsResponse>, String> {
+    ) -> Result<Option<HashMap<Channel, googleplay_protobuf::DetailsResponse>>, String> {
         let mut results = HashMap::new();
 
         match self
@@ -153,9 +154,7 @@ impl ClientRegistry {
             Ok(Some((_, response))) => {
                 results.insert(Channel::Stable, response);
             }
-            Ok(None) => {
-                return Err(format!("App '{package_name}' not found"));
-            }
+            Ok(None) => return Ok(None),
             Err(e) => {
                 console_log!("Error fetching {package_name} for stable channel: {e}");
                 return Err(e);
@@ -171,7 +170,7 @@ impl ClientRegistry {
             }
         }
 
-        Ok(results)
+        Ok(Some(results))
     }
 
     async fn try_insert_optional(
