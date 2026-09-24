@@ -1,0 +1,37 @@
+[package]
+name = "uploader"
+version = "1.0.0"
+edition = "2024"
+
+[[bin]]
+name = "uploader"
+path = "src/main.rs"
+required-features = ["cli"]
+
+[dependencies]
+reqwest = { version = "0.13", features = ["query"] }
+sha1 = "0.10"
+base64 = "0.22"
+url = "2"
+getrandom = "0.4.3"
+
+[lints]
+workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.4.3", features = ["wasm_js"] }
+gloo-net = { version = "0.6", default-features = false, features = ["http"] }
+js-sys = "0.3"
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3.105", features = ["AbortSignal", "RequestRedirect", "RequestCredentials", "RequestCache", "ReadableStream", "ReadableStreamDefaultReader"] }
+web-time = "1"
+
+[features]
+default = ["cli"]
+cli = ["dep:tokio", "dep:clap", "dep:dotenvy"]
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { optional = true, version = "1.39.2", features = ["macros", "rt-multi-thread", "sync"] }
+clap = { optional = true, version = "4", features = ["derive", "env"] }
+dotenvy = { version = "0.15.7", optional = true }
