@@ -8,3 +8,12 @@ sha2 = "0.11.0"
 
 [lints]
 workspace = true
+
+[features]
+default = ["cli"]
+cli = []
+
+[[bin]]
+name = "converter"
+path = "src/main.rs"
+required-features = ["cli"]
