@@ -30,6 +30,7 @@ struct ClientEntry {
 pub struct ClientRegistry {
     clients: HashMap<ClientKey, ClientEntry>,
     env: Env,
+    photos: HashMap<Channel, uploader::client::PhotosClient>,
 }
 
 impl ClientRegistry {
@@ -38,6 +39,7 @@ impl ClientRegistry {
         Self {
             clients: HashMap::new(),
             env,
+            photos: HashMap::new(),
         }
     }
 
@@ -54,6 +56,81 @@ impl ClientRegistry {
             self.env_var(&format!("{prefix}_EMAIL"))?,
             self.env_var(&format!("{prefix}_AAS_TOKEN"))?,
         ))
+    }
+
+    fn history(&self, package: &str, channel: Channel) -> Result<crate::history::History, String> {
+        let prefix = channel.to_string().to_uppercase();
+        let email = self.env_var(&format!("{prefix}_EMAIL"))?;
+        let db = self
+            .env
+            .d1("HISTORY")
+            .map_err(|_| "Missing HISTORY D1 binding")?;
+        Ok(crate::history::History::new(
+            db,
+            &email,
+            package,
+            &channel.to_string(),
+        ))
+    }
+
+    #[allow(clippy::future_not_send)]
+    pub async fn version_history(
+        &self,
+        package: &str,
+        channel: Channel,
+    ) -> Result<Vec<crate::openapi_schema::HistoryVersion>, String> {
+        self.history(package, channel)?.list().await
+    }
+
+    #[allow(clippy::future_not_send)]
+    pub async fn download_and_archive(
+        &mut self,
+        package: &str,
+        channel: Channel,
+        version: i64,
+    ) -> Result<(crate::openapi_schema::DownloadInfo, Option<String>), String> {
+        let history = self.history(package, channel)?;
+        if let Some(record) = history.get(version).await? {
+            return Ok(archived_response(record));
+        }
+        let (_, delivery) = self
+            .get_download_info(package, channel, Some(version))
+            .await?
+            .ok_or("Package version not found")?;
+        let mut info = crate::openapi_schema::DownloadInfo::from(delivery);
+        if !self.photos.contains_key(&channel) {
+            let (email, token) = self.channel_credentials(channel)?;
+            let credential = uploader::cred::from_aas(&email, &token)?;
+            let client =
+                uploader::client::PhotosClient::new(credential).map_err(|e| e.to_string())?;
+            self.photos.insert(channel, client);
+        }
+        if !history.claim(version).await? {
+            let record = history
+                .get(version)
+                .await?
+                .ok_or("History claim disappeared")?;
+            return Ok(archived_response(record));
+        }
+        let photos = self
+            .photos
+            .get_mut(&channel)
+            .ok_or("Photos client missing")?;
+        let result = crate::archive::archive(package, version, &mut info, photos, &history).await;
+        let error = result.err();
+        let state = if error.is_some() {
+            "failed"
+        } else {
+            "complete"
+        };
+        // Do not report success until the durable manifest is saved.
+        if let Err(checkpoint) = history
+            .save(version, &info.photos, state, error.as_deref())
+            .await
+        {
+            return Ok((info, Some(checkpoint)));
+        }
+        Ok((info, error))
     }
 
     /// Get a client for `channel` using the default device.
@@ -241,6 +318,22 @@ impl ClientRegistry {
             Ok(Some((channel, merge_download_infos(download_infos))))
         }
     }
+}
+
+fn archived_response(
+    record: crate::openapi_schema::HistoryVersion,
+) -> (crate::openapi_schema::DownloadInfo, Option<String>) {
+    let mut info = crate::openapi_schema::DownloadInfo::from((None, vec![], vec![], None));
+    info.photos = record.photos;
+    let error = if record.state == "complete" {
+        None
+    } else {
+        Some(record.error.unwrap_or_else(|| {
+            "Archive is in progress or was interrupted; inspect version history before retrying"
+                .to_string()
+        }))
+    };
+    (info, error)
 }
 
 #[must_use]

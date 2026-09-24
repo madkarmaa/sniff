@@ -13,6 +13,7 @@ use utoipa::{OpenApi, ToSchema};
         crate::handlers::get_details_multi,
         crate::handlers::get_details_single,
         crate::handlers::get_download_info,
+        crate::handlers::get_history,
     ),
     components(
         schemas(
@@ -22,6 +23,9 @@ use utoipa::{OpenApi, ToSchema};
             ErrorResponse,
             SerializableDetailsResponse,
             DownloadInfo,
+            ArchivedApk,
+            ArchivedPart,
+            HistoryVersion,
             SplitFile,
             AdditionalFile,
             Item,
@@ -152,26 +156,43 @@ pub struct SerializableDetailsResponse {
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
-#[schema(example = json!({
-    "main_apk_url": "https://play.googleapis.com/download/by-token/download?token=AOTCm0Q...",
-    "splits": [
-        {
-            "name": "config.arm64_v8a",
-            "download_url": "https://play.googleapis.com/download/by-token/download?token=AOTCm0R..."
-        },
-        {
-            "name": "config.en",
-            "download_url": "https://play.googleapis.com/download/by-token/download?token=AOTCm0S..."
-        }
-    ],
-    "additional_files": []
-}))]
+pub struct ArchivedPart {
+    /// Zero-based order. Decode each BMP then concatenate in this order.
+    pub index: usize,
+    pub media_key: String,
+    pub bytes: usize,
+    pub bmp_sha1: String,
+}
+
+#[derive(Serialize, Deserialize, ToSchema)]
+pub struct HistoryVersion {
+    pub version_code: i64,
+    pub state: String,
+    pub photos: Vec<ArchivedApk>,
+    pub error: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Serialize, Deserialize, ToSchema)]
+pub struct ArchivedApk {
+    pub name: String,
+    pub complete: bool,
+    /// Set before Photos submission; retained if the outcome is unknown.
+    pub pending_bmp_sha1: Option<String>,
+    pub bytes: u64,
+    pub sha256: Option<String>,
+    pub parts: Vec<ArchivedPart>,
+}
+
+#[derive(Serialize, Deserialize, ToSchema)]
 pub struct DownloadInfo {
     #[schema(example = "https://play.googleapis.com/download/by-token/download?token=AOTCm0Q...")]
     pub main_apk_url: Option<String>,
     pub splits: Vec<SplitFile>,
     pub additional_files: Vec<AdditionalFile>,
     pub dex_metadata_url: Option<String>,
+    pub photos: Vec<ArchivedApk>,
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
@@ -308,6 +329,7 @@ impl From<gpapi::DownloadInfo> for DownloadInfo {
             splits,
             additional_files,
             dex_metadata_url,
+            photos: Vec::new(),
         }
     }
 }

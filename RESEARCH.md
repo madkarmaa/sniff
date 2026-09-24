@@ -97,3 +97,59 @@ wire shapes, malformed input, commit-token/status validation, hash-lookup mismat
 download identity, Bearer host restrictions, AAS form construction, same-size file
 changes, CLI selectors and the converter round trip. No external service is contacted
 by offline tests. The verification-only emulator was stopped afterward.
+
+## API package archives and durable version history (2026-09-24)
+
+The requested final flow is implemented in the Worker: `/v1/download` retrieves
+Play's merged base/split APKs, converts their bytes to reversible BMP parts, uploads
+to Photos with the same channel email/AAS credentials, and checkpoints a D1 version
+manifest. `/v1/details` remains read-only. `/v1/history/{package}/{channel}` exposes
+stored versions. Account, package, channel, and version form the history key;
+credentials and expiring Play/Photos URLs are not stored in D1. See ARCHIVING.md.
+
+A real request for `com.google.android.calculator`, stable version `85022643`,
+returned HTTP 200 after archiving all three APKs returned by the merged Play flow.
+Play did not offer x86/x86_64 builds for this requested version; these were skipped
+by the existing delivery merge. The API used `.dev.vars` through Wrangler at
+runtime; the compiled uploader then loaded the same file at runtime to download
+every Photos original. No credential values were inspected or displayed by the agent.
+
+| APK | Bytes | Source / restored SHA-256 | Photos media key |
+| --- | ---: | --- | --- |
+| base.apk | 7298875 | `86131a534d5da0ce35b30e13ed5a6ab2f12e6c67f71a721d05937d5c2708bbaa` | `AF1QipNKIt6Q_H2ZXIGMTHeUv1g6sJyxYZk2JlZMEe0o` |
+| config.xxhdpi.apk | 47496 | `1c8bdd22d925b02eec76c7f86307f0c7513755ea25c3592da0ec896a5015c8d1` | `AF1QipMSnj-_Z283pe89lSCHdwyAIddLfAxVdLKrFXDT` |
+| config.xhdpi.apk | 43401 | `74cb8db3c3f2ffc1a3ce07713c0c10c3ba3b49ded1ac975eca3dc02def5f5b93` | `AF1QipMHM7oXgWcxvZEKbYci1Plg3vXaF7luEWRvTaxu` |
+
+Every BMP was downloaded by the native Rust uploader, SHA-1 checked against the
+manifest, and decoded by the converter. All recovered APK sizes and SHA-256 hashes
+matched the bytes streamed from Play. The sanitized manifest is also in local D1.
+Proof artifacts were left in `/tmp/sniff-apk-proof-tmrq8vp0`.
+
+After stopping and restarting the Worker process, requesting the same version
+returned the identical three media keys and unchanged history timestamps in
+58 ms (including the history request), without fresh Play URLs. Isolated runtime
+tests additionally block all egress and verify that completed and incomplete
+history records cannot initiate another Play/Photos flow. D1 records survive a
+full runtime restart; concurrent claims produce exactly one owner; another
+account's records do not appear in history.
+
+The initial Worker auth probe exposed a runtime-specific transport issue:
+Cloudflare rejects Fetch `redirect: "error"` during Request construction. A
+credential-free workerd probe reproduced that TypeError; `manual` constructed
+successfully. The uploader now uses `manual` on WASM and rejects non-200 responses
+at the protocol layer, preserving the no-redirect Bearer boundary. No uploads
+occurred in those initial failed attempts; their empty local test records were
+removed before the successful verification. Wrangler now watches the converter
+and uploader source directories as well as the API so library fixes are rebuilt.
+
+Limitations: this is locally verified, not deployed. The D1 binding has a local-only
+ID until a deployment database is created and migrated. APKs above 8 MiB use ordered
+parts; boundary reconstruction is tested with multiple network chunk sizes, while
+the live fixture's APKs each fit one part. The existing Worker access model is
+unchanged, so access controls and production CPU/subrequest limits must suit the
+operator's deployment. Failed/interrupted attempts remain available for inspection;
+automatic recovery of uncertain Photos mutations is intentionally not implemented.
+
+Final checks passed: `cargo fmt --all --check`, `cargo test --workspace` (21 tests),
+`cargo clippy --workspace --all-targets -- -D warnings`, and `bun run test:worker`
+(release WASM build plus isolated D1/Worker integration tests).

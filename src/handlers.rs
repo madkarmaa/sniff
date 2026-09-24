@@ -222,30 +222,11 @@ pub async fn get_details_single(
     params(
         ("package_name" = String, Path, description = "Android package name"),
         ("channel" = String, Path, description = "Release channel"),
-        ("version_code" = i32, Path, description = "Android version code")
+        ("version_code" = i64, Path, description = "Android version code")
     ),
     responses(
-        (status = 200, description = "Download info retrieved successfully",
-         body = ApiResponse<DownloadInfo>,
-         example = json!({
-             "success": true,
-             "data": {
-                 "main_apk_url": "https://play.googleapis.com/download/by-token/download?token=AOTCm0Q...",
-                 "splits": [
-                     {
-                         "name": "config.arm64_v8a",
-                         "download_url": "https://play.googleapis.com/download/by-token/download?token=AOTCm0R..."
-                     },
-                     {
-                         "name": "config.en",
-                         "download_url": "https://play.googleapis.com/download/by-token/download?token=AOTCm0S..."
-                     }
-                 ],
-                 "additional_files": [],
-                 "dex_metadata_url": null
-             },
-             "error": null
-         })
+        (status = 200, description = "Every APK archived and history saved, or an existing archive returned",
+         body = ApiResponse<DownloadInfo>
         ),
         (status = 400, description = "Invalid parameters",
          body = ErrorResponse,
@@ -255,14 +236,7 @@ pub async fn get_details_single(
              "error": "Invalid Channel: snapshot"
          })
         ),
-        (status = 404, description = "App or version not found",
-         body = ErrorResponse,
-         example = json!({
-             "success": false,
-             "data": null,
-             "error": "App 'com.discord' not found"
-         })
-        ),
+        (status = 502, description = "Incomplete archive; data.photos retains confirmed parts", body = ApiResponse<DownloadInfo>),
         (status = 500, description = "Internal server error",
          body = ErrorResponse,
          example = json!({
@@ -279,7 +253,7 @@ pub async fn get_details_single(
 // state across several device targets; heap-allocating would add indirection
 // for little benefit on this endpoint.
 #[allow(clippy::future_not_send, clippy::large_futures)]
-/// Fetch merged download info.
+/// Archive the merged APK files and persist the version manifest.
 ///
 /// # Errors
 ///
@@ -295,23 +269,64 @@ pub async fn get_download_info(
         Err(e) => return error_response(400, e),
     };
 
+    if !crate::archive::valid_name(&package_name) || version_code <= 0 {
+        return error_response(400, "Invalid package name or version code".to_string());
+    }
     let result = client_registry
         .lock()
         .await
-        .get_download_info(&package_name, channel, Some(version_code))
+        .download_and_archive(&package_name, channel, version_code)
         .await;
-
     match result {
-        Ok(Some((_, download_info))) => {
-            let openapi_download_info = DownloadInfo::from(download_info);
+        Ok((info, error)) => {
+            let status = if error.is_some() { 502 } else { 200 };
             let response = ApiResponse {
-                success: true,
-                data: Some(openapi_download_info),
-                error: None,
+                success: error.is_none(),
+                data: Some(info),
+                error,
             };
-            Ok(Response::from_json(&response)?)
+            let mut response = Response::from_json(&response)?.with_status(status);
+            response.headers_mut().set("Cache-Control", "no-store")?;
+            Ok(response)
         }
-        Ok(None) => error_response(404, format!("App '{package_name}' not found")),
         Err(e) => error_response(500, e),
+    }
+}
+
+#[utoipa::path(
+    get, path = "/v1/history/{package_name}/{channel}",
+    params(("package_name" = String, Path), ("channel" = String, Path)),
+    responses((status = 200, description = "Most recent 100 requested versions for the channel account", body = ApiResponse<Vec<crate::openapi_schema::HistoryVersion>>)),
+    tag = "Downloads"
+)]
+#[allow(clippy::future_not_send)]
+pub async fn get_history(
+    package_name: String,
+    channel: String,
+    registry: SharedClientRegistry,
+) -> Result<Response> {
+    let channel = match Channel::from_str(&channel) {
+        Ok(channel) => channel,
+        Err(error) => return error_response(400, error),
+    };
+    if !crate::archive::valid_name(&package_name) {
+        return error_response(400, "Invalid package name".to_string());
+    }
+    match registry
+        .lock()
+        .await
+        .version_history(&package_name, channel)
+        .await
+    {
+        Ok(history) => {
+            let mut response = Response::from_json(&ApiResponse {
+                success: true,
+                data: Some(history),
+                error: None,
+            })?;
+            response.headers_mut().set("Cache-Control", "no-store")?;
+            Ok(response)
+        }
+        Err(error) => error_response(500, error),
     }
 }

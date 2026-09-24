@@ -7,7 +7,16 @@ routes = [
 ]
 
 [build]
+watch_dir = ["src", "gpapi/src", "uploader/src", "converter/src"]
 command = "cargo install -q --locked worker-build@0.8.6 && worker-build --release"
 
 [vars]
 DEVICE_NAME="sm_a13_5g"
+
+# Local development works without a Cloudflare database. Before deploying,
+# create sniff-history and replace this local-only ID with its database_id.
+[[d1_databases]]
+binding = "HISTORY"
+database_name = "sniff-history"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"

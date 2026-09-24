@@ -145,7 +145,16 @@ Error responses:
 GET /v1/download/:package_name/:channel/:version_code
 ```
 
-Retrieves download URLs for a specific version of an app from a particular channel.
+Retrieves the requested version, converts `base.apk` and every returned split into
+reversible BMP parts, and uploads them to Google Photos using that channel's
+Google Play account. The request waits for uploads and a durable D1 history record.
+Metadata-only `/v1/details` requests do not upload anything.
+
+`data.photos` contains each APK's size, SHA-256, and ordered Photos media keys.
+Completed versions are served from history without contacting Play or uploading
+again; their expiring Play URL fields are empty. `/v1/history/:package_name/:channel`
+lists the latest 100 requested archives for the currently configured channel account.
+See [ARCHIVING.md](ARCHIVING.md) for recovery, reconstruction, and deployment setup.
 Splits are merged across download devices (`px_9a`/`arm64-v8a`,
 `sm_a13_5g`/`armeabi-v7a`, `google_kiwi_x86_64`/`x86`+`x86_64`), so the response
 lists every architecture the app actually ships. ABIs the app has no build for
@@ -159,45 +168,13 @@ lists every architecture the app actually ships. ABIs the app has no build for
 
 **Response Format:**
 
-Successful response (`GET /v1/download/com.discord/stable/345009`, URLs trimmed):
+Successful responses include the existing Play URL fields and a `photos` array.
+Each entry records the APK name, byte length, SHA-256, completion state, and ordered
+BMP parts with their Photos media keys and SHA-1 hashes. [Example manifest](ARCHIVING.md#history-and-response).
 
-```json
-{
-    "success": true,
-    "data": {
-        "main_apk_url": "https://play.googleapis.com/download/by-token/download?token=...",
-        "splits": [
-            {
-                "name": "config.arm64_v8a",
-                "download_url": "https://play.googleapis.com/download/by-token/download?token=..."
-            },
-            {
-                "name": "config.en",
-                "download_url": "https://play.googleapis.com/download/by-token/download?token=..."
-            },
-            {
-                "name": "config.it",
-                "download_url": "https://play.googleapis.com/download/by-token/download?token=..."
-            },
-            {
-                "name": "config.xxhdpi",
-                "download_url": "https://play.googleapis.com/download/by-token/download?token=..."
-            },
-            {
-                "name": "config.armeabi_v7a",
-                "download_url": "https://play.googleapis.com/download/by-token/download?token=..."
-            },
-            {
-                "name": "config.xhdpi",
-                "download_url": "https://play.googleapis.com/download/by-token/download?token=..."
-            }
-        ],
-        "additional_files": [],
-        "dex_metadata_url": "https://play.googleapis.com/download/by-token/download?token=..."
-    },
-    "error": null
-}
-```
+Archive failures return HTTP 502 with `success: false` and the partial manifest in
+`data.photos`; confirmed uploads are retained in history. Failures before archive
+creation return the standard error envelope below.
 
 Error response:
 
@@ -254,6 +231,7 @@ channels. Then:
 
 ```bash
 bun install
+bunx wrangler d1 migrations apply sniff-history --local
 bun run dev
 curl -fsSL -A "Mozilla/5.0" http://localhost:8787/v1/details/com.discord/stable
 ```
@@ -263,7 +241,9 @@ curl -fsSL -A "Mozilla/5.0" http://localhost:8787/v1/details/com.discord/stable
 ```bash
 cargo check --all
 cargo fmt --all -- --check
-cargo clippy --all -- -D warnings
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+bun run test:worker
 ```
 
 ## Environment Variables
@@ -277,3 +257,11 @@ The following environment variables are required:
 - `BETA_AAS_TOKEN`: Authentication token for beta access
 - `ALPHA_EMAIL`: Email enrolled in alpha programs
 - `ALPHA_AAS_TOKEN`: Authentication token for alpha access
+
+## Native Google Photos uploader
+
+The API uses the native Photos library in
+[`uploader/`](uploader/README.md) and the reversible file-to-BMP `converter`. Both also have standalone CLIs.
+The uploader accepts `STABLE_EMAIL`/`STABLE_AAS_TOKEN` at runtime and supports batch
+upload, hash checks and verified original downloads. See [RESEARCH.md](RESEARCH.md)
+for the gotohp reference and live JPEG/BMP round-trip proof.

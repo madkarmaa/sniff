@@ -2,12 +2,14 @@
     "name": "sniff",
     "private": true,
     "devDependencies": {
+        "miniflare": "5.20260917.0-alpha",
         "prettier": "3.9.8",
         "wrangler": "4.134.0"
     },
     "scripts": {
         "format": "prettier --write --ignore-unknown .",
         "dev": "wrangler dev",
-        "deploy": "wrangler deploy"
+        "deploy": "wrangler deploy",
+        "test:worker": "worker-build --release && node tests/history.mjs"
     }
 }

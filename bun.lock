@@ -5,6 +5,7 @@
     "": {
       "name": "sniff",
       "devDependencies": {
+        "miniflare": "5.20260917.0-alpha",
         "prettier": "3.9.8",
         "wrangler": "4.134.0",
       },

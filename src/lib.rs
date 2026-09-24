@@ -1,6 +1,8 @@
+mod archive;
 mod client_registry;
 mod google_play_client;
 mod handlers;
+mod history;
 mod openapi_schema;
 mod serializable_types;
 
@@ -71,6 +73,17 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
                 let package_name = route_param(&ctx, "package_name")?;
                 let channel = route_param(&ctx, "channel")?;
                 handlers::get_details_single(package_name, channel, ctx.data.clone()).await
+            },
+        )
+        .get_async(
+            "/v1/history/:package_name/:channel",
+            |_req, ctx| async move {
+                handlers::get_history(
+                    route_param(&ctx, "package_name")?,
+                    route_param(&ctx, "channel")?,
+                    ctx.data.clone(),
+                )
+                .await
             },
         )
         .get_async(
