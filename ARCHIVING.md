@@ -87,15 +87,19 @@ bunx wrangler d1 migrations apply sniff-history --local
 bun run dev
 ```
 
-For deployment, create a D1 database and place its returned `database_id` in
-`wrangler.toml` (the checked-in all-zero ID is local-only):
+For deployment, create a D1 database. The checked-in all-zero ID is for local
+development. Set the returned ID in the repository's GitHub Actions variable
+`D1_DATABASE_ID`; the deploy workflow inserts it and applies migrations before
+deploying:
 
 ```sh
 bunx wrangler d1 create sniff-history
-# Set database_id in wrangler.toml, then:
-bunx wrangler d1 migrations apply sniff-history --remote
-bun run deploy
+gh variable set D1_DATABASE_ID --repo madkarmaa/sniff --body '<database_id>'
 ```
+
+For a manual deployment, replace `database_id` in `wrangler.toml` with the
+returned ID, then run `bunx wrangler d1 migrations apply sniff-history --remote`
+and `bun run deploy`.
 
 Keep the existing channel credentials configured as Worker secrets. Archive
 creation now makes `/v1/download` a mutating, potentially long-running request;

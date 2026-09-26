@@ -48,6 +48,24 @@ jobs:
                   sed -i "s|pattern = \".*\"|pattern = \"$CUSTOM_DOMAIN\"|" wrangler.toml
                   grep -F "pattern = \"$CUSTOM_DOMAIN\"" wrangler.toml
 
+            - name: Set D1 database ID
+              env:
+                  D1_DATABASE_ID: ${{ vars.D1_DATABASE_ID }}
+              run: |
+                  set -euo pipefail
+                  if [[ ! "$D1_DATABASE_ID" =~ ^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$ ]] || [[ "$D1_DATABASE_ID" == "00000000-0000-0000-0000-000000000000" ]]; then
+                    echo "::error::Set GitHub variable D1_DATABASE_ID to the ID of the sniff-history database"
+                    exit 1
+                  fi
+                  sed -i "s|database_id = \"00000000-0000-0000-0000-000000000000\"|database_id = \"$D1_DATABASE_ID\"|" wrangler.toml
+                  grep -F "database_id = \"$D1_DATABASE_ID\"" wrangler.toml
+
+            - name: Apply D1 migrations
+              env:
+                  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+                  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+              run: bunx --bun wrangler d1 migrations apply sniff-history --remote
+
             - name: Deploy to Cloudflare Workers
               env:
                   CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
