@@ -10,8 +10,8 @@ use sha2::digest::common::hazmat::{SerializableState, SerializedState};
 use uploader::client::PhotosClient;
 use worker::{Fetch, Request, RequestInit, RequestRedirect, Response, Url};
 
-// Queue consumers have a larger CPU budget than HTTP requests on Workers Free.
-const JOB_PART_BYTES: usize = 8 * 1024 * 1024;
+// Keep hashing and BMP conversion within the Workers Free CPU budget.
+const JOB_PART_BYTES: usize = 128 * 1024;
 
 pub fn valid_name(name: &str) -> bool {
     !name.is_empty()

@@ -132,7 +132,7 @@ impl History {
     }
 
     pub async fn acquire(&self, version: i64) -> Result<bool, String> {
-        let result = self.db.prepare("UPDATE version_history SET lease_until=unixepoch('now')+960 WHERE account_key=? AND package=? AND channel=? AND version_code=? AND state='uploading' AND lease_until<unixepoch('now')")
+        let result = self.db.prepare("UPDATE version_history SET lease_until=unixepoch('now')+120 WHERE account_key=? AND package=? AND channel=? AND version_code=? AND state='uploading' AND lease_until<unixepoch('now')")
             .bind_refs(&[D1Type::Text(&self.account), D1Type::Text(&self.package), D1Type::Text(&self.channel), D1Type::Text(&version.to_string())])
             .map_err(|_| "Archive lease failed")?.run().await.map_err(|_| "Archive lease failed")?;
         Ok(result

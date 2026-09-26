@@ -33,4 +33,4 @@ queue = "sniff-archive"
 max_batch_size = 1
 max_batch_timeout = 0
 max_retries = 100
-retry_delay = 960
+retry_delay = 120
