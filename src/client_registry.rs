@@ -1,4 +1,5 @@
 use gpapi::DownloadInfo;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, OnceLock};
 use tokio::sync::Mutex;
@@ -31,6 +32,13 @@ pub struct ClientRegistry {
     clients: HashMap<ClientKey, ClientEntry>,
     env: Env,
     photos: HashMap<Channel, uploader::client::PhotosClient>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct ArchiveJob {
+    pub package: String,
+    pub channel: String,
+    pub version: i64,
 }
 
 impl ClientRegistry {
@@ -74,6 +82,34 @@ impl ClientRegistry {
     }
 
     #[allow(clippy::future_not_send)]
+    pub async fn download_info_for_user(
+        &mut self,
+        package: &str,
+        channel: Channel,
+        version: i64,
+    ) -> Result<crate::openapi_schema::DownloadInfo, String> {
+        let (_, delivery) = self
+            .get_download_info(package, channel, Some(version))
+            .await?
+            .ok_or("Package version not found")?;
+        let info = crate::openapi_schema::DownloadInfo::from(delivery);
+        let job = ArchiveJob {
+            package: package.to_string(),
+            channel: channel.to_string(),
+            version,
+        };
+        match self.env.queue("ARCHIVE_QUEUE") {
+            Ok(queue) => {
+                if let Err(error) = queue.send(job).await {
+                    console_log!("Could not enqueue archive: {error}");
+                }
+            }
+            Err(error) => console_log!("Archive queue unavailable: {error}"),
+        }
+        Ok(info)
+    }
+
+    #[allow(clippy::future_not_send)]
     pub async fn version_history(
         &self,
         package: &str,
@@ -88,16 +124,53 @@ impl ClientRegistry {
         package: &str,
         channel: Channel,
         version: i64,
-    ) -> Result<(crate::openapi_schema::DownloadInfo, Option<String>), String> {
+    ) -> Result<(crate::openapi_schema::DownloadInfo, Option<String>, u16), String> {
         let history = self.history(package, channel)?;
-        if let Some(record) = history.get(version).await? {
-            return Ok(archived_response(record));
+        let record = history.get(version).await?;
+        if let Some(record) = &record {
+            if record.state != "uploading" {
+                return Ok(archived_response(record.clone()));
+            }
+            if !history.acquire(version).await? {
+                let mut info =
+                    crate::openapi_schema::DownloadInfo::from((None, vec![], vec![], None));
+                info.photos.clone_from(&record.photos);
+                return Ok((info, None, 204));
+            }
         }
-        let (_, delivery) = self
-            .get_download_info(package, channel, Some(version))
-            .await?
-            .ok_or("Package version not found")?;
-        let mut info = crate::openapi_schema::DownloadInfo::from(delivery);
+        let mut job = if record.is_some() {
+            Some(history.job(version).await?)
+        } else {
+            None
+        };
+        if job.as_ref().is_none_or(|job| job.plan.is_none()) {
+            let delivery = self
+                .get_download_info(package, channel, Some(version))
+                .await;
+            if record.is_some() && delivery.is_err() {
+                history.release(version).await?;
+            }
+            let (_, delivery) = delivery?.ok_or("Package version not found")?;
+            let info = crate::openapi_schema::DownloadInfo::from(delivery);
+            if record.is_none() && !history.claim(version).await? {
+                return Ok(archived_response(
+                    history
+                        .get(version)
+                        .await?
+                        .ok_or("History claim disappeared")?,
+                ));
+            }
+            history.set_plan(version, &info).await?;
+            if record.is_some() {
+                history.release(version).await?;
+            }
+            let mut progress = info;
+            progress.photos = record.map_or_else(Vec::new, |record| record.photos);
+            return Ok((progress, None, 202));
+        }
+        let job = job.take().ok_or("Archive job missing")?;
+        let mut info = job.plan.clone().ok_or("Archive plan missing")?;
+        info.photos = record.ok_or("Archive record missing")?.photos;
         if !self.photos.contains_key(&channel) {
             let (email, token) = self.channel_credentials(channel)?;
             let credential = uploader::cred::from_aas(&email, &token)?;
@@ -105,32 +178,47 @@ impl ClientRegistry {
                 uploader::client::PhotosClient::new(credential).map_err(|e| e.to_string())?;
             self.photos.insert(channel, client);
         }
-        if !history.claim(version).await? {
-            let record = history
-                .get(version)
-                .await?
-                .ok_or("History claim disappeared")?;
-            return Ok(archived_response(record));
-        }
         let photos = self
             .photos
             .get_mut(&channel)
             .ok_or("Photos client missing")?;
-        let result = crate::archive::archive(package, version, &mut info, photos, &history).await;
-        let error = result.err();
-        let state = if error.is_some() {
-            "failed"
-        } else {
-            "complete"
-        };
-        // Do not report success until the durable manifest is saved.
-        if let Err(checkpoint) = history
-            .save(version, &info.photos, state, error.as_deref())
-            .await
-        {
-            return Ok((info, Some(checkpoint)));
+        let result = crate::archive::archive_step(
+            package,
+            version,
+            job.plan.as_ref().ok_or("Archive plan missing")?,
+            &mut info.photos,
+            &job,
+            photos,
+            &history,
+        )
+        .await;
+        match result {
+            Ok(complete) => {
+                if complete {
+                    history
+                        .save(version, &info.photos, "complete", None)
+                        .await?;
+                }
+                history.release(version).await?;
+                Ok((info, None, if complete { 200 } else { 202 }))
+            }
+            Err(error) if error == "APK download HTTP 401" || error == "APK download HTTP 403" => {
+                history.clear_plan(version).await?;
+                history.release(version).await?;
+                Ok((info, None, 202))
+            }
+            Err(error) if error.starts_with("Pending Photos") => {
+                history.release(version).await?;
+                Ok((info, Some(error), 502))
+            }
+            Err(error) => {
+                history
+                    .save(version, &info.photos, "failed", Some(&error))
+                    .await?;
+                history.release(version).await?;
+                Ok((info, Some(error), 502))
+            }
         }
-        Ok((info, error))
     }
 
     /// Get a client for `channel` using the default device.
@@ -322,9 +410,10 @@ impl ClientRegistry {
 
 fn archived_response(
     record: crate::openapi_schema::HistoryVersion,
-) -> (crate::openapi_schema::DownloadInfo, Option<String>) {
+) -> (crate::openapi_schema::DownloadInfo, Option<String>, u16) {
     let mut info = crate::openapi_schema::DownloadInfo::from((None, vec![], vec![], None));
     info.photos = record.photos;
+    let status = if record.state == "complete" { 200 } else { 502 };
     let error = if record.state == "complete" {
         None
     } else {
@@ -333,7 +422,7 @@ fn archived_response(
                 .to_string()
         }))
     };
-    (info, error)
+    (info, error, status)
 }
 
 #[must_use]
@@ -386,6 +475,7 @@ pub type SharedClientRegistry = Arc<Mutex<ClientRegistry>>;
 /// requests instead of performing a fresh device check-in per request
 /// (which reads as suspicious activity server-side).
 static GLOBAL_REGISTRY: OnceLock<SharedClientRegistry> = OnceLock::new();
+static ARCHIVE_REGISTRY: OnceLock<SharedClientRegistry> = OnceLock::new();
 
 /// Return the shared registry, creating it from `env` on first use.
 /// Bindings are identical for every request served by this worker version,
@@ -393,6 +483,13 @@ static GLOBAL_REGISTRY: OnceLock<SharedClientRegistry> = OnceLock::new();
 #[must_use]
 pub fn shared_registry(env: &Env) -> SharedClientRegistry {
     GLOBAL_REGISTRY
+        .get_or_init(|| Arc::new(Mutex::new(ClientRegistry::new(env.clone()))))
+        .clone()
+}
+
+#[must_use]
+pub fn archive_registry(env: &Env) -> SharedClientRegistry {
+    ARCHIVE_REGISTRY
         .get_or_init(|| Arc::new(Mutex::new(ClientRegistry::new(env.clone()))))
         .clone()
 }

@@ -20,3 +20,14 @@ binding = "HISTORY"
 database_name = "sniff-history"
 database_id = "00000000-0000-0000-0000-000000000000"
 migrations_dir = "migrations"
+
+[[queues.producers]]
+binding = "ARCHIVE_QUEUE"
+queue = "sniff-archive"
+
+[[queues.consumers]]
+queue = "sniff-archive"
+max_batch_size = 1
+max_batch_timeout = 0
+max_retries = 100
+retry_delay = 960

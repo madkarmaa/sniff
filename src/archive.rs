@@ -6,12 +6,12 @@ use base64::Engine as _;
 use futures::StreamExt as _;
 use sha1::Digest as _;
 use sha2::Digest as _;
+use sha2::digest::common::hazmat::{SerializableState, SerializedState};
 use uploader::client::PhotosClient;
 use worker::{Fetch, Request, RequestInit, RequestRedirect, Response, Url};
 
-// Several copies coexist across the WASM/Fetch boundary. Keep well below the
-// Workers 128 MiB isolate limit and Photos image size limits, even for large APKs.
-const PART_BYTES: usize = 8 * 1024 * 1024;
+// Keep each Free-plan invocation's hashing and BMP conversion small.
+const JOB_PART_BYTES: usize = 128 * 1024;
 
 pub fn valid_name(name: &str) -> bool {
     !name.is_empty()
@@ -78,13 +78,23 @@ fn delivery_url(raw: &str) -> Result<Url, String> {
     Ok(url)
 }
 
-async fn fetch_apk(raw: &str) -> Result<Response, String> {
+async fn fetch_apk(raw: &str, range: Option<(u64, usize)>) -> Result<Response, String> {
     let mut url = delivery_url(raw)?;
     for _ in 0..6 {
         let mut init = RequestInit::new();
         init.with_redirect(RequestRedirect::Manual);
         let request = Request::new_with_init(url.as_str(), &init)
             .map_err(|_| "APK request construction failed")?;
+        if let Some((offset, size)) = range {
+            let end = offset
+                .checked_add(u64::try_from(size).map_err(|_| "APK range overflow")?)
+                .and_then(|n| n.checked_sub(1))
+                .ok_or("APK range overflow")?;
+            request
+                .headers()
+                .set("Range", &format!("bytes={offset}-{end}"))
+                .map_err(|_| "APK range request failed")?;
+        }
         // Delivery URLs are signed. Never attach Play or Photos credentials.
         let response = Fetch::Request(request)
             .send()
@@ -100,7 +110,7 @@ async fn fetch_apk(raw: &str) -> Result<Response, String> {
             url = delivery_url(next.as_str())?;
             continue;
         }
-        if response.status_code() != 200 {
+        if response.status_code() != if range.is_some() { 206 } else { 200 } {
             return Err(format!("APK download HTTP {}", response.status_code()));
         }
         return Ok(response);
@@ -108,93 +118,151 @@ async fn fetch_apk(raw: &str) -> Result<Response, String> {
     Err("Too many APK redirects".to_string())
 }
 
-pub async fn archive(
+async fn fetch_chunk(raw: &str, offset: u64, size: usize) -> Result<(Vec<u8>, bool), String> {
+    let mut response = fetch_apk(raw, Some((offset, size))).await?;
+    let content_range = response
+        .headers()
+        .get("Content-Range")
+        .map_err(|_| "Invalid APK range header")?
+        .ok_or("Missing APK range header")?;
+    let (span, total) = content_range
+        .strip_prefix("bytes ")
+        .and_then(|s| s.split_once('/'))
+        .ok_or("Invalid APK range header")?;
+    let (start, end) = span.split_once('-').ok_or("Invalid APK range header")?;
+    let start: u64 = start.parse().map_err(|_| "Invalid APK range start")?;
+    let end: u64 = end.parse().map_err(|_| "Invalid APK range end")?;
+    let total: u64 = total.parse().map_err(|_| "Invalid APK range total")?;
+    let length = end
+        .checked_sub(start)
+        .and_then(|n| n.checked_add(1))
+        .ok_or("Invalid APK range")?;
+    let after_end = end.checked_add(1).ok_or("Invalid APK range")?;
+    if start != offset
+        || end >= total
+        || length > u64::try_from(size).map_err(|_| "APK range overflow")?
+    {
+        return Err("Unexpected APK range".to_string());
+    }
+    let mut body = Vec::with_capacity(size);
+    let mut stream = response.stream().map_err(|_| "APK body unavailable")?;
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|_| "APK download interrupted")?;
+        if body.len().saturating_add(chunk.len()) > size {
+            return Err("APK range too large".to_string());
+        }
+        body.extend_from_slice(&chunk);
+    }
+    if u64::try_from(body.len()).map_err(|_| "APK range overflow")? != length {
+        return Err("APK range truncated".to_string());
+    }
+    Ok((body, after_end == total))
+}
+
+fn restore_hash(state: Option<&str>) -> Result<sha2::Sha256, String> {
+    let Some(state) = state else {
+        return Ok(sha2::Sha256::new());
+    };
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(state)
+        .map_err(|_| "Invalid archive hash state")?;
+    let serialized = SerializedState::<sha2::Sha256>::try_from(bytes.as_slice())
+        .map_err(|_| "Invalid archive hash state")?;
+    sha2::Sha256::deserialize(&serialized).map_err(|_| "Invalid archive hash state".to_string())
+}
+
+pub async fn archive_step(
     package: &str,
     version: i64,
-    info: &mut DownloadInfo,
+    plan: &DownloadInfo,
+    files: &mut Vec<ArchivedApk>,
+    job: &crate::history::Job,
     photos: &mut PhotosClient,
     history: &crate::history::History,
-) -> Result<(), String> {
-    let files = apk_files(info)?;
-    // Authenticate before downloading any potentially large APK.
-    photos.bearer_token().await.map_err(|e| e.to_string())?;
-    for (name, url) in files {
-        let file = ArchivedApk {
-            name,
+) -> Result<bool, String> {
+    let planned = apk_files(plan)?;
+    let index = files.iter().take_while(|file| file.complete).count();
+    if index == planned.len() && files.len() == index {
+        return Ok(true);
+    }
+    let (name, url) = planned.get(index).ok_or("Archive file mismatch")?;
+    if files.len() == index {
+        files.push(ArchivedApk {
+            name: name.clone(),
             complete: false,
             pending_bmp_sha1: None,
             bytes: 0,
             sha256: None,
             parts: vec![],
-        };
-        let name = file.name.clone();
-        info.photos.push(file);
-        let result = archive_file(package, version, &url, &mut info.photos, photos, history).await;
-        if let Err(error) = result {
-            return Err(format!(
-                "{name}: {error}; completed Photos parts remain available in data.photos"
-            ));
-        }
+        });
     }
-    Ok(())
-}
-
-async fn archive_file(
-    package: &str,
-    version: i64,
-    url: &str,
-    files: &mut [ArchivedApk],
-    photos: &mut PhotosClient,
-    history: &crate::history::History,
-) -> Result<(), String> {
-    let mut response = fetch_apk(url).await?;
-    let expected = response
-        .headers()
-        .get("Content-Length")
-        .map_err(|_| "Invalid APK length header")?
-        .map(|v| v.parse::<u64>().map_err(|_| "Invalid APK length"))
-        .transpose()?;
-    let mut stream = response.stream().map_err(|_| "APK body unavailable")?;
-    let mut buffer = Vec::with_capacity(PART_BYTES);
-    let mut hash = sha2::Sha256::new();
-    let mut received = 0u64;
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|_| "APK download interrupted")?;
-        received = received
-            .checked_add(u64::try_from(chunk.len()).map_err(|_| "APK size overflow")?)
-            .ok_or("APK size overflow")?;
-        if expected.is_some_and(|len| received > len) {
+    let file = files.get(index).ok_or("Archive file missing")?;
+    if files.len() != index.saturating_add(1) || &file.name != name {
+        return Err("Archive checkpoint requires manual recovery".to_string());
+    }
+    if job.hash_bytes > file.bytes {
+        return Err("Invalid archive hash offset".to_string());
+    }
+    let size = if job.hash_bytes < file.bytes {
+        usize::try_from(
+            file.bytes
+                .saturating_sub(job.hash_bytes)
+                .min(u64::try_from(JOB_PART_BYTES).map_err(|_| "APK range overflow")?),
+        )
+        .map_err(|_| "APK range overflow")?
+    } else {
+        JOB_PART_BYTES
+    };
+    let (chunk, last) = fetch_chunk(url, job.hash_bytes, size).await?;
+    if job.hash_bytes == 0 && !chunk.starts_with(b"PK\x03\x04") {
+        return Err("Delivery body is not an APK/ZIP".to_string());
+    }
+    let mut hash = restore_hash(job.hash_state.as_deref())?;
+    hash.update(&chunk);
+    let next_offset = job
+        .hash_bytes
+        .checked_add(u64::try_from(chunk.len()).map_err(|_| "APK size overflow")?)
+        .ok_or("APK size overflow")?;
+    if job.hash_bytes == file.bytes {
+        archive_part(package, version, &chunk, files, photos, history).await?;
+    } else if next_offset > file.bytes {
+        return Err("Invalid archive hash offset".to_string());
+    }
+    if last {
+        if files.get(index).ok_or("Archive file missing")?.bytes != next_offset {
             return Err("APK length mismatch".to_string());
         }
-        hash.update(&chunk);
-        let mut remaining = chunk.as_slice();
-        while !remaining.is_empty() {
-            remaining = fill_part(&mut buffer, remaining);
-            if buffer.len() == PART_BYTES {
-                archive_part(package, version, &buffer, files, photos, history).await?;
-                buffer.clear();
-            }
+        if files
+            .get(index)
+            .ok_or("Archive file missing")?
+            .pending_bmp_sha1
+            .is_some()
+        {
+            return Err("Pending Photos commit requires manual recovery".to_string());
         }
+        let file = files.get_mut(index).ok_or("Archive file missing")?;
+        file.sha256 = Some(crate::history::hex(&hash.finalize()));
+        file.complete = true;
+        let initial = sha2::Sha256::new().serialize();
+        history
+            .save_progress(
+                version,
+                files,
+                &base64::engine::general_purpose::STANDARD.encode(initial),
+                0,
+            )
+            .await?;
+    } else {
+        history
+            .save_progress(
+                version,
+                files,
+                &base64::engine::general_purpose::STANDARD.encode(hash.serialize()),
+                next_offset,
+            )
+            .await?;
     }
-    if expected.is_some_and(|len| len != received) || received == 0 {
-        return Err("Empty or truncated APK".to_string());
-    }
-    if !buffer.is_empty() {
-        archive_part(package, version, &buffer, files, photos, history).await?;
-    }
-    let file = files.last_mut().ok_or("Missing archive file")?;
-    file.sha256 = Some(crate::history::hex(&hash.finalize()));
-    file.complete = true;
-    history.save(version, files, "uploading", None).await?;
-    Ok(())
-}
-
-// Consume only what fits, regardless of the network's chunk boundaries.
-fn fill_part<'a>(buffer: &mut Vec<u8>, input: &'a [u8]) -> &'a [u8] {
-    let count = PART_BYTES.saturating_sub(buffer.len()).min(input.len());
-    let (head, tail) = input.split_at(count);
-    buffer.extend_from_slice(head);
-    tail
+    Ok(files.len() == planned.len() && files.iter().all(|file| file.complete))
 }
 
 async fn archive_part(
@@ -214,14 +282,28 @@ async fn archive_part(
     let bmp_sha1 = crate::history::hex(&sha1);
     let index = file.parts.len();
     let name = format!("{package}-{version}-{}.part{index:05}.bmp", file.name);
-    file.pending_bmp_sha1 = Some(bmp_sha1.clone());
-    history.save(version, files, "uploading", None).await?;
-    let media_key = if let Some(key) = photos
+    let pending = file.pending_bmp_sha1.is_some();
+    if file
+        .pending_bmp_sha1
+        .as_deref()
+        .is_some_and(|previous| previous != bmp_sha1)
+    {
+        return Err("Pending Photos hash differs from the current APK part".to_string());
+    }
+    if !pending {
+        file.pending_bmp_sha1 = Some(bmp_sha1.clone());
+        history.save(version, files, "uploading", None).await?;
+    }
+    let found = photos
         .find_remote_media_by_hash(&sha1)
         .await
-        .map_err(|e| e.to_string())?
-    {
+        .map_err(|e| e.to_string())?;
+    let media_key = if let Some(key) = found {
         key
+    } else if pending {
+        return Err(
+            "Pending Photos commit is not visible by hash; inspect before retrying".to_string(),
+        );
     } else {
         let size = u64::try_from(bmp.len()).map_err(|_| "BMP size overflow")?;
         let hash = base64::engine::general_purpose::STANDARD.encode(sha1);
@@ -259,34 +341,6 @@ async fn archive_part(
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn streamed_parts_restore_exact_bytes_across_boundaries() {
-        let payload = [vec![42; PART_BYTES], vec![17; 8193]].concat();
-        // Boundaries smaller than, exactly equal to, and larger than a BMP part.
-        for network_chunk in [32771, PART_BYTES, PART_BYTES + 1] {
-            let mut buffer = Vec::new();
-            let mut restored = Vec::new();
-            let mut count = 0;
-            for chunk in payload.chunks(network_chunk) {
-                let mut remaining = chunk;
-                while !remaining.is_empty() {
-                    remaining = fill_part(&mut buffer, remaining);
-                    assert!(buffer.len() <= PART_BYTES);
-                    if buffer.len() == PART_BYTES {
-                        let bmp = converter::encode(&buffer).unwrap();
-                        restored.extend_from_slice(converter::decode(&bmp).unwrap());
-                        buffer.clear();
-                        count += 1;
-                    }
-                }
-            }
-            let bmp = converter::encode(&buffer).unwrap();
-            restored.extend_from_slice(converter::decode(&bmp).unwrap());
-            assert_eq!(count, 1);
-            assert_eq!(restored, payload);
-        }
-    }
-
     #[test]
     fn plan_requires_base_and_every_split_and_trusted_delivery_urls() {
         let mut info = DownloadInfo::from((

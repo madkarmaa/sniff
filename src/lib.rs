@@ -6,10 +6,14 @@ mod history;
 mod openapi_schema;
 mod serializable_types;
 
-use client_registry::{SharedClientRegistry, shared_registry};
+use client_registry::{ArchiveJob, SharedClientRegistry, archive_registry, shared_registry};
 use openapi_schema::ApiDoc;
+use std::str::FromStr;
 use utoipa::OpenApi;
-use worker::{Context, Env, Headers, Request, Response, Result, RouteContext, Router, event};
+use worker::{
+    Context, Env, Headers, MessageBatch, MessageExt, Request, Response, Result, RouteContext,
+    Router, console_log, event,
+};
 
 const SCALAR_HTML: &str = r#"<!doctype html>
 <html>
@@ -101,4 +105,45 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         )
         .run(req, env)
         .await
+}
+
+#[allow(clippy::future_not_send)]
+#[event(queue)]
+async fn archive_queue(batch: MessageBatch<ArchiveJob>, env: Env, _ctx: Context) -> Result<()> {
+    console_error_panic_hook::set_once();
+    for message in batch.messages()? {
+        let job = message.body();
+        let channel = match google_play_client::Channel::from_str(&job.channel) {
+            Ok(channel) => channel,
+            Err(error) => {
+                console_log!("Invalid archive job channel: {error}");
+                message.ack();
+                continue;
+            }
+        };
+        let registry = archive_registry(&env);
+        let outcome = registry
+            .lock()
+            .await
+            .download_and_archive(&job.package, channel, job.version)
+            .await;
+        match outcome {
+            Ok((_, _, 202)) => {
+                env.queue("ARCHIVE_QUEUE")?.send(job.clone()).await?;
+                message.ack();
+            }
+            Ok((_, _, 204)) => message.retry(),
+            Ok((_, error, _)) => {
+                if let Some(error) = error {
+                    console_log!("Archive stopped: {error}");
+                }
+                message.ack();
+            }
+            Err(error) => {
+                console_log!("Archive job will retry: {error}");
+                message.retry();
+            }
+        }
+    }
+    Ok(())
 }

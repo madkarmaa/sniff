@@ -225,7 +225,7 @@ pub async fn get_details_single(
         ("version_code" = i64, Path, description = "Android version code")
     ),
     responses(
-        (status = 200, description = "Every APK archived and history saved, or an existing archive returned",
+        (status = 200, description = "Download URLs returned; archive upload runs in the background",
          body = ApiResponse<DownloadInfo>
         ),
         (status = 400, description = "Invalid parameters",
@@ -236,7 +236,6 @@ pub async fn get_details_single(
              "error": "Invalid Channel: snapshot"
          })
         ),
-        (status = 502, description = "Incomplete archive; data.photos retains confirmed parts", body = ApiResponse<DownloadInfo>),
         (status = 500, description = "Internal server error",
          body = ErrorResponse,
          example = json!({
@@ -253,7 +252,7 @@ pub async fn get_details_single(
 // state across several device targets; heap-allocating would add indirection
 // for little benefit on this endpoint.
 #[allow(clippy::future_not_send, clippy::large_futures)]
-/// Archive the merged APK files and persist the version manifest.
+/// Return download information and enqueue a background archive.
 ///
 /// # Errors
 ///
@@ -275,17 +274,16 @@ pub async fn get_download_info(
     let result = client_registry
         .lock()
         .await
-        .download_and_archive(&package_name, channel, version_code)
+        .download_info_for_user(&package_name, channel, version_code)
         .await;
     match result {
-        Ok((info, error)) => {
-            let status = if error.is_some() { 502 } else { 200 };
+        Ok(info) => {
             let response = ApiResponse {
-                success: error.is_none(),
+                success: true,
                 data: Some(info),
-                error,
+                error: None,
             };
-            let mut response = Response::from_json(&response)?.with_status(status);
+            let mut response = Response::from_json(&response)?;
             response.headers_mut().set("Cache-Control", "no-store")?;
             Ok(response)
         }

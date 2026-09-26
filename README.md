@@ -145,15 +145,14 @@ Error responses:
 GET /v1/download/:package_name/:channel/:version_code
 ```
 
-Retrieves the requested version, converts `base.apk` and every returned split into
-reversible BMP parts, and uploads them to Google Photos using that channel's
-Google Play account. The request waits for uploads and a durable D1 history record.
-Metadata-only `/v1/details` requests do not upload anything.
+Returns Play download URLs for the requested version immediately. A queue archives
+`base.apk` and its splits to Google Photos in the background using that channel's
+account. The response does not depend on whether the archive succeeds.
+`/v1/details` requests do not start an archive.
 
-`data.photos` contains each APK's size, SHA-256, and ordered Photos media keys.
-Completed versions are served from history without contacting Play or uploading
-again; their expiring Play URL fields are empty. `/v1/history/:package_name/:channel`
-lists the latest 100 requested archives for the currently configured channel account.
+`data.photos` is empty in the immediate response. `/v1/history/:package_name/:channel`
+shows background archive progress and completed APK sizes, SHA-256 hashes, and
+ordered Photos media keys for the configured channel account.
 See [ARCHIVING.md](ARCHIVING.md) for recovery, reconstruction, and deployment setup.
 Splits are merged across download devices (`px_9a`/`arm64-v8a`,
 `sm_a13_5g`/`armeabi-v7a`, `google_kiwi_x86_64`/`x86`+`x86_64`), so the response
@@ -168,13 +167,9 @@ lists every architecture the app actually ships. ABIs the app has no build for
 
 **Response Format:**
 
-Successful responses include the existing Play URL fields and a `photos` array.
-Each entry records the APK name, byte length, SHA-256, completion state, and ordered
-BMP parts with their Photos media keys and SHA-1 hashes. [Example manifest](ARCHIVING.md#history-and-response).
-
-Archive failures return HTTP 502 with `success: false` and the partial manifest in
-`data.photos`; confirmed uploads are retained in history. Failures before archive
-creation return the standard error envelope below.
+Successful responses include the existing Play URL fields and an empty `photos`
+array. Background archive failures are visible in history and do not change the
+download response. [Example archive manifest](ARCHIVING.md#history-and-response).
 
 Error response:
 

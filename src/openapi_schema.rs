@@ -155,7 +155,7 @@ pub struct SerializableDetailsResponse {
     pub enable_reviews: Option<bool>,
 }
 
-#[derive(Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Serialize, Deserialize, ToSchema)]
 pub struct ArchivedPart {
     /// Zero-based order. Decode each BMP then concatenate in this order.
     pub index: usize,
@@ -164,7 +164,7 @@ pub struct ArchivedPart {
     pub bmp_sha1: String,
 }
 
-#[derive(Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Serialize, Deserialize, ToSchema)]
 pub struct HistoryVersion {
     pub version_code: i64,
     pub state: String,
@@ -174,7 +174,7 @@ pub struct HistoryVersion {
     pub updated_at: String,
 }
 
-#[derive(Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Serialize, Deserialize, ToSchema)]
 pub struct ArchivedApk {
     pub name: String,
     pub complete: bool,
@@ -185,7 +185,7 @@ pub struct ArchivedApk {
     pub parts: Vec<ArchivedPart>,
 }
 
-#[derive(Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Serialize, Deserialize, ToSchema)]
 pub struct DownloadInfo {
     #[schema(example = "https://play.googleapis.com/download/by-token/download?token=AOTCm0Q...")]
     pub main_apk_url: Option<String>,
@@ -195,7 +195,7 @@ pub struct DownloadInfo {
     pub photos: Vec<ArchivedApk>,
 }
 
-#[derive(Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Serialize, Deserialize, ToSchema)]
 pub struct SplitFile {
     #[schema(example = "config.arm64_v8a")]
     pub name: Option<String>,
@@ -203,7 +203,7 @@ pub struct SplitFile {
     pub download_url: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Serialize, Deserialize, ToSchema)]
 pub struct AdditionalFile {
     #[schema(example = "main.1234.com.example.obb")]
     pub filename: Option<String>,
