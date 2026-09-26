@@ -102,6 +102,8 @@ endpoint starts a background job; do not prefetch it or cache its responses.
 Anyone who can call it can request an archive under the existing access model.
 Large archives may use many queue operations; Workers Free includes 10,000 queue
 operations per day. Interrupted requests remain visible in history.
+The minute cron trigger requeues jobs that have made no progress for at least
+one minute, so a stopped queue chain does not require another download request.
 
 ## Verification
 

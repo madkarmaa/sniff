@@ -12,7 +12,7 @@ use std::str::FromStr;
 use utoipa::OpenApi;
 use worker::{
     Context, Env, Headers, MessageBatch, MessageExt, Request, Response, Result, RouteContext,
-    Router, console_log, event,
+    Router, ScheduleContext, ScheduledEvent, console_log, event,
 };
 
 const SCALAR_HTML: &str = r#"<!doctype html>
@@ -146,4 +146,34 @@ async fn archive_queue(batch: MessageBatch<ArchiveJob>, env: Env, _ctx: Context)
         }
     }
     Ok(())
+}
+
+#[allow(clippy::future_not_send)]
+#[event(scheduled)]
+async fn resume_archives(_event: ScheduledEvent, env: Env, _ctx: ScheduleContext) {
+    let result: Result<()> = async {
+        let db = env.d1("HISTORY")?;
+        let queue = env.queue("ARCHIVE_QUEUE")?;
+        for stalled in history::stalled_jobs(&db)
+            .await
+            .map_err(worker::Error::RustError)?
+        {
+            let version = stalled
+                .version_code
+                .parse()
+                .map_err(|_| worker::Error::RustError("Invalid stalled archive version".into()))?;
+            queue
+                .send(ArchiveJob {
+                    package: stalled.package,
+                    channel: stalled.channel,
+                    version,
+                })
+                .await?;
+        }
+        Ok(())
+    }
+    .await;
+    if let Err(error) = result {
+        console_log!("Archive recovery failed: {error}");
+    }
 }

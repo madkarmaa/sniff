@@ -30,6 +30,19 @@ struct JobRow {
     hash_bytes: String,
 }
 
+#[derive(Deserialize)]
+pub struct StalledJob {
+    pub package: String,
+    pub channel: String,
+    pub version_code: String,
+}
+
+pub async fn stalled_jobs(db: &D1Database) -> Result<Vec<StalledJob>, String> {
+    Ok(db.prepare("SELECT package,channel,version_code FROM version_history WHERE state='uploading' AND lease_until<unixepoch('now') AND updated_at<strftime('%Y-%m-%dT%H:%M:%fZ','now','-1 minute') ORDER BY updated_at LIMIT 50")
+        .all().await.map_err(|_| "Stalled archive query failed")?
+        .results::<StalledJob>().map_err(|_| "Stalled archive decode failed")?)
+}
+
 pub struct Job {
     pub plan: Option<DownloadInfo>,
     pub hash_state: Option<String>,
