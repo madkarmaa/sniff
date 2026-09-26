@@ -8,8 +8,8 @@ and saves a version manifest in D1. Archive failures do not affect the response.
 Play and Photos use the same `{CHANNEL}_EMAIL` / `{CHANNEL}_AAS_TOKEN` pair.
 OBB and dex-metadata URLs remain in the response but are not archived.
 
-Each queue delivery processes at most 128 KiB so Workers Free can spread CPU
-work across invocations. Parts are
+Each queue delivery processes at most 8 MiB so Workers Free can spread CPU
+work across invocations without creating thousands of Photos items. Parts are
 ordinary converter BMPs with the payload length and checksum embedded in pixels.
 The final part may be shorter. Small APKs use one BMP. No local APK files are
 written by the Worker.
