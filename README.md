@@ -177,9 +177,12 @@ version branch. Each branch deploys to a Worker named `sniff-<branch>` using
 - Versioned API references are at `https://sniff.madkarma.top/v1/docs` and
   `https://sniff.madkarma.top/v2/docs`.
 
-These path routes take precedence over the existing `sniff` Worker's custom
-domain, which remains the fallback for unversioned URLs. Both versioned Workers
-receive their Google Play credentials from the same GitHub repository secrets
+The `sniff-v2` Worker owns the `sniff.madkarma.top` custom domain, keeping DNS and
+TLS active for both versions. The versioned path routes take precedence over this
+custom domain. The original `sniff` Worker is removed. Scalar and OpenAPI are only
+served at the versioned URLs; `/` redirects to `/v2/docs`, and the old `/docs` and
+`/openapi.json` URLs return 404. Both versioned Workers receive their Google Play
+credentials from the same GitHub repository secrets
 during deployment. Required secrets are `CLOUDFLARE_API_TOKEN`,
 `CLOUDFLARE_ACCOUNT_ID`, `STABLE_EMAIL`, and `STABLE_AAS_TOKEN`; beta and alpha
 credentials are optional. The Cloudflare token must be able to deploy Workers

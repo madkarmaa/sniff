@@ -59,6 +59,8 @@ jobs:
                       {"pattern": f"sniff.madkarma.top/{branch}", "zone_name": "madkarma.top"},
                       {"pattern": f"sniff.madkarma.top/{branch}/*", "zone_name": "madkarma.top"},
                   ]
+                  if branch == "v2":
+                      config["routes"].insert(0, {"pattern": "sniff.madkarma.top", "custom_domain": True})
                   Path("wrangler.deploy.json").write_text(json.dumps(config))
                   PYTHON
 
@@ -91,7 +93,7 @@ jobs:
               env:
                   CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
                   CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-              run: bun run deploy -- --config wrangler.deploy.json --secrets-file "$RUNNER_TEMP/sniff-secrets.json"
+              run: bunx --bun wrangler deploy --config wrangler.deploy.json --secrets-file "$RUNNER_TEMP/sniff-secrets.json"
 
             - name: Remove temporary secrets
               if: always()

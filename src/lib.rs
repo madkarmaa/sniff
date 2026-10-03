@@ -61,23 +61,7 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
 
             Ok(Response::ok(SCALAR_HTML)?.with_headers(headers))
         })
-        .get("/docs", |_req, _ctx| {
-            let headers = Headers::new();
-            headers.set("Content-Type", "text/html;charset=UTF-8")?;
-
-            Ok(Response::ok(SCALAR_HTML)?.with_headers(headers))
-        })
         .get("/v2/openapi.json", |_req, _ctx| {
-            let spec = ApiDoc::openapi()
-                .to_pretty_json()
-                .map_err(|e| worker::Error::RustError(e.to_string()))?;
-
-            let headers = Headers::new();
-            headers.set("Content-Type", "application/json")?;
-
-            Ok(Response::ok(&spec)?.with_headers(headers))
-        })
-        .get("/openapi.json", |_req, _ctx| {
             let spec = ApiDoc::openapi()
                 .to_pretty_json()
                 .map_err(|e| worker::Error::RustError(e.to_string()))?;
