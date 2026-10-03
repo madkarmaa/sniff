@@ -4,21 +4,17 @@
 #![allow(clippy::option_if_let_else)]
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use utoipa::{OpenApi, ToSchema};
 
 #[derive(OpenApi)]
 #[openapi(
     paths(
-        crate::handlers::get_details_multi,
-        crate::handlers::get_details_single,
         crate::handlers::get_download_info,
     ),
     components(
         schemas(
-            ApiResponse<SerializableDetailsResponse>,
-            MultiChannelApiResponse<SerializableDetailsResponse>,
-            ApiResponse<DownloadInfo>,
+            ApiResponse<DownloadResponse<SerializableDetailsResponse>>,
+            DownloadResponse<SerializableDetailsResponse>,
             ErrorResponse,
             SerializableDetailsResponse,
             DownloadInfo,
@@ -34,12 +30,11 @@ use utoipa::{OpenApi, ToSchema};
         )
     ),
     tags(
-        (name = "App Details", description = "Get Google Play Store app details"),
-        (name = "Downloads", description = "Get app download information")
+        (name = "Downloads", description = "Get latest app details and download information")
     ),
     info(
         title = "Sniff API",
-        description = "API for retrieving Google Play Store app details across different release channels",
+        description = "API for retrieving the latest Google Play Store app details and download URLs across different release channels",
         version = env!("CARGO_PKG_VERSION"),
         contact(
             name = "MadKarma",
@@ -61,12 +56,13 @@ pub struct ApiResponse<T> {
     pub error: Option<String>,
 }
 
+/// App metadata and download URLs share the same response object.
 #[derive(Serialize, Deserialize, ToSchema)]
-#[allow(clippy::option_if_let_else)]
-pub struct MultiChannelApiResponse<T> {
-    pub success: bool,
-    pub data: Option<HashMap<String, T>>,
-    pub error: Option<String>,
+pub struct DownloadResponse<T> {
+    #[serde(flatten)]
+    pub details: T,
+    #[serde(flatten)]
+    pub download: DownloadInfo,
 }
 
 /// Error envelope. Matches the runtime error shape exactly: `data` is
@@ -228,7 +224,7 @@ pub struct AppDetails {
     #[schema(example = "Discord Inc.")]
     pub developer_name: Option<String>,
     #[schema(example = 289_020)]
-    pub version_code: Option<i32>,
+    pub version_code: Option<i64>,
     #[schema(example = "289.20 - Stable")]
     pub version_string: Option<String>,
     #[schema(example = 180_070_862)]
@@ -309,5 +305,97 @@ impl From<gpapi::DownloadInfo> for DownloadInfo {
             additional_files,
             dex_metadata_url,
         }
+    }
+}
+
+#[cfg(test)]
+// Tests use assertions for contract failures and `?` for serialization errors.
+#[allow(clippy::panic_in_result_fn)]
+mod tests {
+    use super::{ApiDoc, ApiResponse, DownloadInfo, DownloadResponse};
+    use crate::serializable_types::SerializableDetailsResponse;
+    use googleplay_protobuf::{AppDetails, DetailsResponse, DocumentDetails, Item};
+    use serde_json::{Value, json};
+    use utoipa::OpenApi;
+
+    #[test]
+    fn download_response_preserves_metadata_and_downloads() -> Result<(), serde_json::Error> {
+        let details = DetailsResponse {
+            item: Some(Item {
+                id: Some("com.example".into()),
+                title: Some("Example".into()),
+                details: Some(DocumentDetails {
+                    app_details: Some(AppDetails {
+                        version_code: Some(123),
+                        version_string: Some("1.2.3".into()),
+                        recent_changes_html: Some("Latest changes".into()),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            footer_html: Some("Footer".into()),
+            enable_reviews: Some(false),
+            ..Default::default()
+        };
+        let metadata = serde_json::to_value(SerializableDetailsResponse(details.clone()))?;
+        let download = DownloadInfo::from((
+            Some("https://example.com/main.apk".into()),
+            vec![(
+                Some("config.arm64_v8a".into()),
+                Some("https://example.com/arm64.apk".into()),
+            )],
+            vec![(
+                Some("main.123.com.example.obb".into()),
+                Some("https://example.com/main.obb".into()),
+            )],
+            Some("https://example.com/main.dm".into()),
+        ));
+        let urls = serde_json::to_value(&download)?;
+        let response = serde_json::to_value(ApiResponse {
+            success: true,
+            data: Some(DownloadResponse {
+                details: SerializableDetailsResponse(details),
+                download,
+            }),
+            error: None,
+        })?;
+        let mut expected_data = metadata;
+        if let (Some(data), Some(urls)) = (expected_data.as_object_mut(), urls.as_object()) {
+            data.extend(urls.clone());
+        }
+        assert_eq!(
+            response,
+            json!({"success": true, "data": expected_data, "error": null})
+        );
+        assert_eq!(
+            response.pointer("/data/enable_reviews"),
+            Some(&json!(false))
+        );
+        assert!(response.pointer("/data/item/creator").is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn openapi_exposes_only_latest_v2_download() -> Result<(), serde_json::Error> {
+        let spec = serde_json::to_value(ApiDoc::openapi())?;
+        assert_eq!(spec.pointer("/info/version"), Some(&json!("2.0.0")));
+        let paths = spec.get("paths").and_then(Value::as_object);
+        assert_eq!(paths.map(serde_json::Map::len), Some(1));
+        let operation = paths
+            .and_then(|paths| paths.get("/v2/download/{package_name}/{channel}"))
+            .and_then(|path| path.get("get"));
+        let parameters = operation
+            .and_then(|operation| operation.get("parameters"))
+            .and_then(Value::as_array);
+        let names = parameters.map(|parameters| {
+            parameters
+                .iter()
+                .filter_map(|parameter| parameter.get("name").and_then(Value::as_str))
+                .collect::<Vec<_>>()
+        });
+        assert_eq!(names, Some(vec!["package_name", "channel"]));
+        Ok(())
     }
 }

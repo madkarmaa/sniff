@@ -3,10 +3,16 @@ name: Deploy Worker
 on:
     push:
         branches:
-            - main
+            - 'v*'
+    workflow_dispatch:
+
+concurrency:
+    group: deploy-${{ github.ref_name }}
+    cancel-in-progress: false
 
 jobs:
     deploy:
+        if: startsWith(github.ref_name, 'v')
         runs-on: ubuntu-latest
         permissions:
             contents: read
@@ -36,28 +42,28 @@ jobs:
             - name: Bun install
               run: bun install --frozen-lockfile
 
-            - name: Set custom domain
+            - name: Configure branch deployment
               env:
-                  CUSTOM_DOMAIN: ${{ vars.CUSTOM_DOMAIN }}
+                  API_BRANCH: ${{ github.ref_name }}
               run: |
-                  set -euo pipefail
-                  if [ -z "${CUSTOM_DOMAIN:-}" ]; then
-                    echo "::error::GitHub variable CUSTOM_DOMAIN is missing or empty"
-                    exit 1
-                  fi
-                  sed -i "s|pattern = \".*\"|pattern = \"$CUSTOM_DOMAIN\"|" wrangler.toml
-                  grep -F "pattern = \"$CUSTOM_DOMAIN\"" wrangler.toml
+                  python3 - <<'PYTHON'
+                  import json
+                  import os
+                  import tomllib
+                  from pathlib import Path
 
-            - name: Deploy to Cloudflare Workers
-              env:
-                  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-                  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-              run: bun run deploy
+                  branch = os.environ["API_BRANCH"]
+                  config = tomllib.loads(Path("wrangler.toml").read_text())
+                  config["name"] = f"sniff-{branch}"
+                  config["routes"] = [
+                      {"pattern": f"sniff.madkarma.top/{branch}", "zone_name": "madkarma.top"},
+                      {"pattern": f"sniff.madkarma.top/{branch}/*", "zone_name": "madkarma.top"},
+                  ]
+                  Path("wrangler.deploy.json").write_text(json.dumps(config))
+                  PYTHON
 
-            - name: Sync Worker secrets
+            - name: Prepare Worker secrets
               env:
-                  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-                  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
                   STABLE_EMAIL: ${{ secrets.STABLE_EMAIL }}
                   STABLE_AAS_TOKEN: ${{ secrets.STABLE_AAS_TOKEN }}
                   BETA_EMAIL: ${{ secrets.BETA_EMAIL }}
@@ -65,20 +71,28 @@ jobs:
                   ALPHA_EMAIL: ${{ secrets.ALPHA_EMAIL }}
                   ALPHA_AAS_TOKEN: ${{ secrets.ALPHA_AAS_TOKEN }}
               run: |
-                  set -euo pipefail
-                  for name in STABLE_EMAIL STABLE_AAS_TOKEN; do
-                    value="${!name:-}"
-                    if [ -z "$value" ]; then
-                      echo "::error::GitHub secret $name is missing or empty"
-                      exit 1
-                    fi
-                    printf '%s' "$value" | bunx --bun wrangler secret put "$name"
-                  done
-                  for name in BETA_EMAIL BETA_AAS_TOKEN ALPHA_EMAIL ALPHA_AAS_TOKEN; do
-                    value="${!name:-}"
-                    if [ -z "$value" ]; then
-                      echo "::warning::GitHub secret $name is missing or empty, skipping"
-                      continue
-                    fi
-                    printf '%s' "$value" | bunx --bun wrangler secret put "$name"
-                  done
+                  python3 - <<'PYTHON'
+                  import json
+                  import os
+                  from pathlib import Path
+
+                  required = ("STABLE_EMAIL", "STABLE_AAS_TOKEN")
+                  optional = ("BETA_EMAIL", "BETA_AAS_TOKEN", "ALPHA_EMAIL", "ALPHA_AAS_TOKEN")
+                  for name in required:
+                      if not os.environ.get(name):
+                          raise SystemExit(f"::error::GitHub secret {name} is missing or empty")
+                  secrets = {name: os.environ[name] for name in required + optional if os.environ.get(name)}
+                  path = Path(os.environ["RUNNER_TEMP"]) / "sniff-secrets.json"
+                  path.touch(mode=0o600)
+                  path.write_text(json.dumps(secrets))
+                  PYTHON
+
+            - name: Deploy API ${{ github.ref_name }} to Cloudflare Workers
+              env:
+                  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+                  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+              run: bun run deploy -- --config wrangler.deploy.json --secrets-file "$RUNNER_TEMP/sniff-secrets.json"
+
+            - name: Remove temporary secrets
+              if: always()
+              run: rm -f "$RUNNER_TEMP/sniff-secrets.json" wrangler.deploy.json

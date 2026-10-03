@@ -1,6 +1,6 @@
 [package]
 name = "sniff"
-version = "1.0.1"
+version = "2.0.0"
 edition = "2024"
 authors = [ "MadKarma <me@madkarma.top>" ]
 repository = "https://github.com/madkarmaa/sniff"
@@ -29,6 +29,9 @@ googleplay-protobuf = "3"
 serde = { version = "1.0.219", features = ["derive"] }
 
 utoipa = { version = "5.5", features = ["axum_extras"] }
+
+[dev-dependencies]
+serde_json = "1"
 
 [workspace]
 members = ["gpapi", "oauth2aas"]

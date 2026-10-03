@@ -17,7 +17,7 @@ const SCALAR_HTML: &str = r#"<!doctype html>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
   </head>
   <body>
-    <script id="api-reference" data-url="/openapi.json"></script>
+    <script id="api-reference" data-url="/v2/openapi.json"></script>
     <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.69.0"></script>
   </body>
 </html>"#;
@@ -42,14 +42,40 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
     router
         .get("/", |req, _ctx| {
             let mut url = req.url()?;
-            url.set_path("/docs");
+            url.set_path("/v2/docs");
             Response::redirect(url)
+        })
+        .get("/v2", |req, _ctx| {
+            let mut url = req.url()?;
+            url.set_path("/v2/docs");
+            Response::redirect(url)
+        })
+        .get("/v2/", |req, _ctx| {
+            let mut url = req.url()?;
+            url.set_path("/v2/docs");
+            Response::redirect(url)
+        })
+        .get("/v2/docs", |_req, _ctx| {
+            let headers = Headers::new();
+            headers.set("Content-Type", "text/html;charset=UTF-8")?;
+
+            Ok(Response::ok(SCALAR_HTML)?.with_headers(headers))
         })
         .get("/docs", |_req, _ctx| {
             let headers = Headers::new();
             headers.set("Content-Type", "text/html;charset=UTF-8")?;
 
             Ok(Response::ok(SCALAR_HTML)?.with_headers(headers))
+        })
+        .get("/v2/openapi.json", |_req, _ctx| {
+            let spec = ApiDoc::openapi()
+                .to_pretty_json()
+                .map_err(|e| worker::Error::RustError(e.to_string()))?;
+
+            let headers = Headers::new();
+            headers.set("Content-Type", "application/json")?;
+
+            Ok(Response::ok(&spec)?.with_headers(headers))
         })
         .get("/openapi.json", |_req, _ctx| {
             let spec = ApiDoc::openapi()
@@ -61,29 +87,12 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
 
             Ok(Response::ok(&spec)?.with_headers(headers))
         })
-        .get_async("/v1/details/:package_name", |_req, ctx| async move {
-            let package_name = route_param(&ctx, "package_name")?;
-            handlers::get_details_multi(package_name, ctx.data.clone()).await
-        })
         .get_async(
-            "/v1/details/:package_name/:channel",
+            "/v2/download/:package_name/:channel",
             |_req, ctx| async move {
                 let package_name = route_param(&ctx, "package_name")?;
                 let channel = route_param(&ctx, "channel")?;
-                handlers::get_details_single(package_name, channel, ctx.data.clone()).await
-            },
-        )
-        .get_async(
-            "/v1/download/:package_name/:channel/:version_code",
-            |_req, ctx| async move {
-                let package_name = route_param(&ctx, "package_name")?;
-                let channel = route_param(&ctx, "channel")?;
-                let version_code: i64 = ctx
-                    .param("version_code")
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0);
-                handlers::get_download_info(package_name, channel, version_code, ctx.data.clone())
-                    .await
+                handlers::get_download_info(package_name, channel, ctx.data.clone()).await
             },
         )
         .run(req, env)

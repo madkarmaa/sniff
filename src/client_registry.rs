@@ -1,3 +1,4 @@
+use googleplay_protobuf::DetailsResponse;
 use gpapi::DownloadInfo;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, OnceLock};
@@ -110,108 +111,41 @@ impl ClientRegistry {
             .ok_or_else(|| format!("client missing for channel {channel}"))
     }
 
-    /// Get details for `package_name` on `channel`.
+    /// Get latest app details and merged download info across download targets.
+    ///
+    /// All download targets use the version advertised in the returned details.
     ///
     /// # Errors
     ///
-    /// Returns an error if the channel is unavailable for the package or if
-    /// the underlying client request fails.
-    pub async fn get_details_with_fallback(
-        &mut self,
-        package_name: &str,
-        channel: Channel,
-    ) -> Result<Option<(Channel, googleplay_protobuf::DetailsResponse)>, String> {
-        if !channel.is_available_for_package(package_name) {
-            return Err(format!(
-                "Channel '{channel}' is not available for package '{package_name}'"
-            ));
-        }
-
-        let client = self.get_client(channel).await?;
-        client
-            .get_details(package_name)
-            .await
-            .map(|opt| opt.map(|response| (channel, response)))
-    }
-
-    /// Get details across all available channels.
-    ///
-    /// Returns `Ok(None)` when the app is not found on the stable channel.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the stable channel lookup fails.
-    pub async fn get_details_multi(
-        &mut self,
-        package_name: &str,
-    ) -> Result<Option<HashMap<Channel, googleplay_protobuf::DetailsResponse>>, String> {
-        let mut results = HashMap::new();
-
-        match self
-            .get_details_with_fallback(package_name, Channel::Stable)
-            .await
-        {
-            Ok(Some((_, response))) => {
-                results.insert(Channel::Stable, response);
-            }
-            Ok(None) => return Ok(None),
-            Err(e) => {
-                console_log!("Error fetching {package_name} for stable channel: {e}");
-                return Err(e);
-            }
-        }
-
-        // Beta/Alpha credentials are optional: if they are missing (or the
-        // channel errors), skip the channel instead of failing the request.
-        for channel in [Channel::Beta, Channel::Alpha] {
-            if channel.is_available_for_package(package_name) {
-                self.try_insert_optional(&mut results, package_name, channel)
-                    .await;
-            }
-        }
-
-        Ok(Some(results))
-    }
-
-    async fn try_insert_optional(
-        &mut self,
-        results: &mut HashMap<Channel, googleplay_protobuf::DetailsResponse>,
-        package_name: &str,
-        channel: Channel,
-    ) {
-        match self.get_client(channel).await {
-            Err(e) => {
-                console_log!("Skipping {channel} channel for {package_name}: {e}");
-            }
-            Ok(client) => match client.get_details(package_name).await {
-                Ok(Some(response)) => {
-                    results.insert(channel, response);
-                }
-                Err(e) => {
-                    console_log!("Error fetching {package_name} for {channel} channel: {e}");
-                }
-                Ok(None) => {}
-            },
-        }
-    }
-
-    /// Get merged download info across download targets.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the channel is unavailable for the package or if
-    /// all per-ABI download attempts fail.
+    /// Returns an error if the channel is unavailable for the package,
+    /// details cannot be fetched, the latest version cannot be determined,
+    /// or all per-ABI downloads fail.
     pub async fn get_download_info(
         &mut self,
         package_name: &str,
         channel: Channel,
-        version_code: Option<i64>,
-    ) -> Result<Option<(Channel, DownloadInfo)>, String> {
+    ) -> Result<Option<(DetailsResponse, DownloadInfo)>, String> {
         if !channel.is_available_for_package(package_name) {
             return Err(format!(
                 "Channel '{channel}' is not available for package '{package_name}'"
             ));
         }
+
+        let Some(details) = self
+            .get_client(channel)
+            .await?
+            .get_details(package_name)
+            .await?
+        else {
+            return Ok(None);
+        };
+        let version_code = details
+            .item
+            .as_ref()
+            .and_then(|item| item.details.as_ref())
+            .and_then(|details| details.app_details.as_ref())
+            .and_then(|app_details| app_details.version_code)
+            .ok_or_else(|| format!("Latest version not found for app '{package_name}'"))?;
 
         let mut download_infos = Vec::new();
         let mut errors = Vec::new();
@@ -222,7 +156,9 @@ impl ClientRegistry {
                 .await
             {
                 // Boxed: the download future is ~90kB, too large to hold inline.
-                Ok(client) => Box::pin(client.get_download_info(package_name, version_code)).await,
+                Ok(client) => {
+                    Box::pin(client.get_download_info(package_name, Some(version_code))).await
+                }
                 Err(error) => Err(error),
             };
 
@@ -238,7 +174,7 @@ impl ClientRegistry {
         if download_infos.is_empty() {
             Err(errors.join("; "))
         } else {
-            Ok(Some((channel, merge_download_infos(download_infos))))
+            Ok(Some((details, merge_download_infos(download_infos))))
         }
     }
 }

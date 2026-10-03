@@ -12,46 +12,33 @@ sizes, and other details for Android applications.
 - **Multi-Channel Support**: Access app details from Stable, Beta, and Alpha channels (where available)
 - **Intelligent Track Detection**: Automatically identifies which channels are available for specific apps
 - **Multi-Arch Downloads**: Download info merges splits across devices (arm64-v8a, armeabi-v7a, plus density/locale) so one call lists every APK split the app ships
-- **Unified API**: Simple REST API endpoints for accessing app information
+- **Unified API**: One endpoint returns app details and download URLs for the latest version
 
 ## API Endpoints
 
-Interactive API reference is served at `/docs`.
+Interactive API reference is served at `/v2/docs`; the OpenAPI document is
+available at `/v2/openapi.json`.
 
-### Get App Details (All Available Channels)
-
-```
-GET /v1/details/:package_name
-```
-
-Returns details for all available channels for the specified package.
-
-**Response Headers:**
-
-- `X-Available-Channels`: Comma-separated list of available channels for the app
-
-Successful response:
-
-```jsonc
-{
-    "success": true,
-    "data": {
-        // channel name -> details (only available channels are present)
-        "stable": { "item": {/* see single-channel shape below */} },
-        "beta": { "item": {/* ... */} }
-        // "alpha" if available
-    },
-    "error": null
-}
-```
-
-### Get App Details (Specific Channel)
+### Get Latest App Details and Download Info
 
 ```
-GET /v1/details/:package_name/:channel
+GET /v2/download/:package_name/:channel
 ```
 
-Returns details for a specific channel (stable, beta, or alpha) if available.
+Returns app metadata and download URLs for the latest version available on the
+requested channel. Google Play only lists the latest version, so no build ID or
+version code is required in the URL. Metadata and download fields are merged
+under `data`; the selected version is in `data.item.details.app_details.version_code`.
+All download targets use that version.
+
+Splits are merged across download devices (`px_9a`/`arm64-v8a`,
+`sm_a13_5g`/`armeabi-v7a`, `google_kiwi_x86_64`/`x86`+`x86_64`). ABIs whose
+requests fail are skipped; a partial merge still returns 200.
+
+**Parameters:**
+
+- `package_name`: The package identifier of the app (e.g., `com.discord`)
+- `channel`: Release channel (`stable`, `beta`, or `alpha`)
 
 **Possible channels:**
 
@@ -61,7 +48,7 @@ Returns details for a specific channel (stable, beta, or alpha) if available.
 
 **Response Format:**
 
-Successful response (`GET /v1/details/com.discord/stable`, trimmed):
+Successful response (`GET /v2/download/com.discord/stable`, trimmed):
 
 ```json
 {
@@ -109,11 +96,15 @@ Successful response (`GET /v1/details/com.discord/stable`, trimmed):
                     },
                     {
                         "label": "Offered by",
-                        "container": { "description": "Google Commerce Ltd" }
+                        "container": {
+                            "description": "Google Commerce Ltd"
+                        }
                     },
                     {
                         "label": "Released on",
-                        "container": { "description": "May 13, 2015" }
+                        "container": {
+                            "description": "May 13, 2015"
+                        }
                     }
                 ]
             },
@@ -123,48 +114,7 @@ Successful response (`GET /v1/details/com.discord/stable`, trimmed):
             "force_shareability": false
         },
         "footer_html": "All prices include VAT.",
-        "enable_reviews": false
-    },
-    "error": null
-}
-```
-
-Error responses:
-
-```json
-{
-    "success": false,
-    "data": null,
-    "error": "Error message describing the issue"
-}
-```
-
-### Get Download Info for a Specific App Version
-
-```
-GET /v1/download/:package_name/:channel/:version_code
-```
-
-Retrieves download URLs for a specific version of an app from a particular channel.
-Splits are merged across download devices (`px_9a`/`arm64-v8a`,
-`sm_a13_5g`/`armeabi-v7a`, `google_kiwi_x86_64`/`x86`+`x86_64`), so the response
-lists every architecture the app actually ships. ABIs the app has no build for
-(e.g. x86 for arm-only apps) are skipped — a partial merge still returns 200.
-
-**Parameters:**
-
-- `package_name`: The package identifier of the app (e.g., `com.discord`)
-- `channel`: Release channel (`stable`, `beta`, or `alpha`)
-- `version_code`: The specific Android version code to download (integer, see `details.app_details.version_code`)
-
-**Response Format:**
-
-Successful response (`GET /v1/download/com.discord/stable/345009`, URLs trimmed):
-
-```json
-{
-    "success": true,
-    "data": {
+        "enable_reviews": false,
         "main_apk_url": "https://play.googleapis.com/download/by-token/download?token=...",
         "splits": [
             {
@@ -205,9 +155,35 @@ Error response:
 {
     "success": false,
     "data": null,
-    "error": "App not found or version unavailable"
+    "error": "App 'com.discord' not found"
 }
 ```
+
+An invalid channel returns 400, an app not found returns 404, and upstream failures
+return 500. Separate details endpoints are not part of v2; clients should use the
+v2 download endpoint for both metadata and downloads. The `v1` branch continues
+to serve the original v1 API for existing clients.
+
+## Versioned Deployments
+
+The `v2` branch is the default branch. The `v1` branch preserves the original API,
+and `feat/archiving` remains a separate feature branch. Pushes to `v*` branches
+trigger independent deployments; the workflow can also be run manually on a
+version branch. Each branch deploys to a Worker named `sniff-<branch>` using
+`sniff.madkarma.top/<branch>` and `sniff.madkarma.top/<branch>/*` routes.
+
+- `v1` deploys `sniff-v1`, preserving all `/v1/*` API URLs.
+- `v2` deploys `sniff-v2`, serving the new `/v2/*` API URLs.
+- Versioned API references are at `https://sniff.madkarma.top/v1/docs` and
+  `https://sniff.madkarma.top/v2/docs`.
+
+These path routes take precedence over the existing `sniff` Worker's custom
+domain, which remains the fallback for unversioned URLs. Both versioned Workers
+receive their Google Play credentials from the same GitHub repository secrets
+during deployment. Required secrets are `CLOUDFLARE_API_TOKEN`,
+`CLOUDFLARE_ACCOUNT_ID`, `STABLE_EMAIL`, and `STABLE_AAS_TOKEN`; beta and alpha
+credentials are optional. The Cloudflare token must be able to deploy Workers
+and manage routes in the `madkarma.top` zone.
 
 ## Build From Source
 
@@ -255,7 +231,7 @@ channels. Then:
 ```bash
 bun install
 bun run dev
-curl -fsSL -A "Mozilla/5.0" http://localhost:8787/v1/details/com.discord/stable
+curl -fsSL -A "Mozilla/5.0" http://localhost:8787/v2/download/com.discord/stable
 ```
 
 ### 3. Checks

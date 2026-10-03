@@ -303,5 +303,6 @@ rust-project.json
 ### Wrangler ###
 .wrangler/
 .dev.vars
+wrangler.deploy.json
 
 # End of https://www.toptal.com/developers/gitignore/api/rust,rust-analyzer,node,visualstudiocode,intellij,remix+cloudflareworkers
