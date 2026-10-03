@@ -86,7 +86,10 @@ jobs:
                       request = urllib.request.Request(url, headers=headers, data=json.dumps(data).encode() if data else None, method=method)
                       try:
                           with urllib.request.urlopen(request, timeout=30) as response:
-                              result = json.load(response)
+                              body = response.read()
+                              if not body and request.get_method() == "DELETE":
+                                  return None
+                              result = json.loads(body)
                       except urllib.error.HTTPError as error:
                           raise RuntimeError(f"Cloudflare API returned {error.code}: {error.read().decode()}") from None
                       if not result.get("success"):
@@ -109,8 +112,8 @@ jobs:
                       if domain["service"] not in ("sniff", "sniff-v2"):
                           raise SystemExit("::error::The hostname is attached to an unexpected Worker")
                   for domain in attached:
-                      api(domains + "/" + domain["id"], method="DELETE")
                       try:
+                          api(domains + "/" + domain["id"], method="DELETE")
                           ensure_dns()
                       except Exception:
                           # Restore the original attachment if DNS creation fails.
