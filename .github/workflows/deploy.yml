@@ -68,6 +68,7 @@ jobs:
               if: github.ref_name == 'v2'
               env:
                   CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+                  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
               run: |
                   python3 - <<'PYTHON'
                   import json
@@ -77,28 +78,47 @@ jobs:
 
                   zone = "7755ca3a0a589f2307fb97d2632d4314"
                   hostname = "sniff.madkarma.top"
-                  endpoint = f"https://api.cloudflare.com/client/v4/zones/{zone}/dns_records"
+                  base = "https://api.cloudflare.com/client/v4"
+                  dns = f"{base}/zones/{zone}/dns_records"
+                  domains = f"{base}/accounts/{os.environ['CLOUDFLARE_ACCOUNT_ID']}/workers/domains"
                   headers = {"Authorization": "Bearer " + os.environ["CLOUDFLARE_API_TOKEN"], "Content-Type": "application/json"}
-                  def api(url, data=None):
-                      request = urllib.request.Request(url, headers=headers, data=json.dumps(data).encode() if data else None)
+                  def api(url, data=None, method=None):
+                      request = urllib.request.Request(url, headers=headers, data=json.dumps(data).encode() if data else None, method=method)
                       try:
-                          with urllib.request.urlopen(request) as response:
+                          with urllib.request.urlopen(request, timeout=30) as response:
                               result = json.load(response)
                       except urllib.error.HTTPError as error:
-                          raise SystemExit(f"::error::Cloudflare DNS API returned {error.code}; the token needs Zone DNS Edit for madkarma.top") from None
+                          raise RuntimeError(f"Cloudflare API returned {error.code}: {error.read().decode()}") from None
                       if not result.get("success"):
-                          raise SystemExit(f"::error::Cloudflare DNS request failed: {result.get('errors')}")
-                      return result["result"]
+                          raise RuntimeError(f"Cloudflare request failed: {result.get('errors')}")
+                      return result.get("result")
 
-                  records = api(endpoint + "?name=" + hostname)
-                  matching = [record for record in records if record["type"] == "AAAA" and record["content"] == "100::" and record["proxied"]]
-                  if matching:
-                      print("Proxied DNS record already exists")
-                      for record in matching:
-                          print(json.dumps({key: record.get(key) for key in ("id", "type", "name", "content", "proxied", "meta")}))
-                  else:
-                      api(endpoint, {"type": "AAAA", "name": hostname, "content": "100::", "proxied": True, "ttl": 1})
-                      print("Created proxied AAAA record for " + hostname)
+                  def ensure_dns():
+                      records = api(dns + "?name=" + hostname)
+                      matching = [record for record in records if record["type"] == "AAAA" and record["content"] == "100::" and record["proxied"]]
+                      if matching:
+                          print("Proxied DNS record already exists")
+                      else:
+                          api(dns, {"type": "AAAA", "name": hostname, "content": "100::", "proxied": True, "ttl": 1})
+                          print("Created proxied AAAA record for " + hostname)
+
+                  # Verify DNS access before changing any custom-domain attachment.
+                  api(dns + "?name=" + hostname)
+                  attached = [domain for domain in api(domains) if domain["hostname"] == hostname]
+                  for domain in attached:
+                      if domain["service"] not in ("sniff", "sniff-v2"):
+                          raise SystemExit("::error::The hostname is attached to an unexpected Worker")
+                  for domain in attached:
+                      api(domains + "/" + domain["id"], method="DELETE")
+                      try:
+                          ensure_dns()
+                      except Exception:
+                          # Restore the original attachment if DNS creation fails.
+                          api(domains, {key: domain[key] for key in ("hostname", "service", "zone_id")}, method="PUT")
+                          raise
+                      print("Replaced custom-domain attachment with proxied DNS")
+                  if not attached:
+                      ensure_dns()
                   PYTHON
 
             - name: Prepare Worker secrets
