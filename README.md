@@ -16,7 +16,8 @@ sizes, and other details for Android applications.
 
 ## API Endpoints
 
-Interactive API reference is served at `/docs`.
+Interactive API reference is served at `/v1/docs`; the OpenAPI document is
+available at `/v1/openapi.json`.
 
 ### Get App Details (All Available Channels)
 
@@ -208,6 +209,27 @@ Error response:
     "error": "App not found or version unavailable"
 }
 ```
+
+## Versioned Deployments
+
+The `v2` branch is the default branch. The `v1` branch preserves the original API,
+and `feat/archiving` remains a separate feature branch. Pushes to `v*` branches
+trigger independent deployments; the workflow can also be run manually on a
+version branch. Each branch deploys to a Worker named `sniff-<branch>` using
+`sniff.madkarma.top/<branch>` and `sniff.madkarma.top/<branch>/*` routes.
+
+- `v1` deploys `sniff-v1`, preserving all `/v1/*` API URLs.
+- `v2` deploys `sniff-v2`, serving the new `/v2/*` API URLs.
+- Versioned API references are at `https://sniff.madkarma.top/v1/docs` and
+  `https://sniff.madkarma.top/v2/docs`.
+
+These path routes take precedence over the existing `sniff` Worker's custom
+domain, which remains the fallback for unversioned URLs. Both versioned Workers
+receive their Google Play credentials from the same GitHub repository secrets
+during deployment. Required secrets are `CLOUDFLARE_API_TOKEN`,
+`CLOUDFLARE_ACCOUNT_ID`, `STABLE_EMAIL`, and `STABLE_AAS_TOKEN`; beta and alpha
+credentials are optional. The Cloudflare token must be able to deploy Workers
+and manage routes in the `madkarma.top` zone.
 
 ## Build From Source
 
