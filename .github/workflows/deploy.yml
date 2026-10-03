@@ -60,8 +60,45 @@ jobs:
                       {"pattern": f"sniff.madkarma.top/{branch}/*", "zone_name": "madkarma.top"},
                   ]
                   if branch == "v2":
-                      config["routes"].insert(0, {"pattern": "sniff.madkarma.top", "custom_domain": True})
+                      config["routes"].append({"pattern": "sniff.madkarma.top/*", "zone_name": "madkarma.top"})
                   Path("wrangler.deploy.json").write_text(json.dumps(config))
+                  PYTHON
+
+            - name: Ensure proxied DNS record
+              if: github.ref_name == 'v2'
+              env:
+                  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+              run: |
+                  python3 - <<'PYTHON'
+                  import json
+                  import os
+                  import urllib.error
+                  import urllib.request
+
+                  zone = "7755ca3a0a589f2307fb97d2632d4314"
+                  hostname = "sniff.madkarma.top"
+                  endpoint = f"https://api.cloudflare.com/client/v4/zones/{zone}/dns_records"
+                  headers = {"Authorization": "Bearer " + os.environ["CLOUDFLARE_API_TOKEN"], "Content-Type": "application/json"}
+                  def api(url, data=None):
+                      request = urllib.request.Request(url, headers=headers, data=json.dumps(data).encode() if data else None)
+                      try:
+                          with urllib.request.urlopen(request) as response:
+                              result = json.load(response)
+                      except urllib.error.HTTPError as error:
+                          raise SystemExit(f"::error::Cloudflare DNS API returned {error.code}; the token needs Zone DNS Edit for madkarma.top") from None
+                      if not result.get("success"):
+                          raise SystemExit(f"::error::Cloudflare DNS request failed: {result.get('errors')}")
+                      return result["result"]
+
+                  records = api(endpoint + "?name=" + hostname)
+                  matching = [record for record in records if record["type"] == "AAAA" and record["content"] == "100::" and record["proxied"]]
+                  if matching:
+                      print("Proxied DNS record already exists")
+                      for record in matching:
+                          print(json.dumps({key: record.get(key) for key in ("id", "type", "name", "content", "proxied", "meta")}))
+                  else:
+                      api(endpoint, {"type": "AAAA", "name": hostname, "content": "100::", "proxied": True, "ttl": 1})
+                      print("Created proxied AAAA record for " + hostname)
                   PYTHON
 
             - name: Prepare Worker secrets
