@@ -1,3 +1,6 @@
+// Worker entrypoint expansion creates non-Send futures for a single-threaded WASM runtime.
+#![allow(clippy::future_not_send)]
+
 mod client_registry;
 mod google_play_client;
 mod handlers;

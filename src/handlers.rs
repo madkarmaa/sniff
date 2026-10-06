@@ -1,5 +1,3 @@
-#![allow(clippy::await_holding_lock)]
-
 use crate::client_registry::SharedClientRegistry;
 use crate::google_play_client::Channel;
 use crate::openapi_schema::{
@@ -110,8 +108,6 @@ pub async fn get_download_info(
     };
 
     let result = client_registry
-        .lock()
-        .await
         .get_download_info(&package_name, channel)
         .await;
 

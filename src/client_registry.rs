@@ -1,8 +1,7 @@
 use googleplay_protobuf::DetailsResponse;
 use gpapi::DownloadInfo;
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, OnceLock};
-use tokio::sync::Mutex;
+use std::sync::{Arc, Mutex, OnceLock};
 use worker::{Date, Env, console_log};
 
 use crate::google_play_client::{Channel, GooglePlayClient};
@@ -23,13 +22,23 @@ const DOWNLOAD_TARGETS: [(&str, &str); 4] = [
 /// implement it and it panics.)
 const SESSION_TTL_MS: u64 = 1_800_000;
 
+#[derive(Clone)]
 struct ClientEntry {
     client: GooglePlayClient,
     logged_in_at_ms: Option<u64>,
 }
 
+type ClientCache = Mutex<HashMap<ClientKey, ClientEntry>>;
+
+fn snapshot(cache: &ClientCache, key: &ClientKey) -> Result<Option<ClientEntry>, String> {
+    cache
+        .lock()
+        .map_err(|_| "Client session cache is unavailable".to_string())
+        .map(|clients| clients.get(key).cloned())
+}
+
 pub struct ClientRegistry {
-    clients: HashMap<ClientKey, ClientEntry>,
+    clients: Arc<ClientCache>,
     env: Env,
 }
 
@@ -37,7 +46,9 @@ impl ClientRegistry {
     #[must_use]
     pub fn new(env: Env) -> Self {
         Self {
-            clients: HashMap::new(),
+            clients: GLOBAL_CLIENTS
+                .get_or_init(|| Arc::new(Mutex::new(HashMap::new())))
+                .clone(),
             env,
         }
     }
@@ -63,52 +74,51 @@ impl ClientRegistry {
     ///
     /// Returns an error if required environment configuration is missing or
     /// if the client cannot be created or initialized.
-    pub async fn get_client(&mut self, channel: Channel) -> Result<&GooglePlayClient, String> {
+    pub async fn get_client(&self, channel: Channel) -> Result<GooglePlayClient, String> {
         let device_name = self.env_var("DEVICE_NAME")?;
         self.get_client_for_device(channel, &device_name, &[]).await
     }
 
     async fn get_client_for_device(
-        &mut self,
+        &self,
         channel: Channel,
         device_name: &str,
         supported_abis: &[&str],
-    ) -> Result<&GooglePlayClient, String> {
+    ) -> Result<GooglePlayClient, String> {
         let abis: Vec<String> = supported_abis.iter().copied().map(String::from).collect();
         let key = (channel, device_name.to_string(), abis.clone());
-
-        if !self.clients.contains_key(&key) {
-            let (email, aas_token) = self.channel_credentials(channel)?;
-            let client =
-                GooglePlayClient::new_for_abis(device_name, &abis, &email, &aas_token, channel)?;
-            self.clients.insert(
-                key.clone(),
-                ClientEntry {
-                    client,
-                    logged_in_at_ms: None,
-                },
-            );
-        }
-
-        let fresh = self.clients.get(&key).is_some_and(|entry| {
-            entry.logged_in_at_ms.is_some_and(|logged_in_at_ms| {
+        // Only clone plain client/session state under the lock. A request must never
+        // own an isolate-global lock while awaiting network or another request.
+        let cached = snapshot(&self.clients, &key)?;
+        let mut entry = if let Some(entry) = cached {
+            if entry.logged_in_at_ms.is_some_and(|logged_in_at_ms| {
                 Date::now().as_millis().saturating_sub(logged_in_at_ms) < SESSION_TTL_MS
-            })
-        });
-
-        if !fresh {
-            let entry = self
-                .clients
-                .get_mut(&key)
-                .ok_or_else(|| format!("client missing for channel {channel}"))?;
-            entry.client.initialize().await?;
-            entry.logged_in_at_ms = Some(Date::now().as_millis());
-        }
-
+            }) {
+                return Ok(entry.client);
+            }
+            entry
+        } else {
+            let (email, aas_token) = self.channel_credentials(channel)?;
+            ClientEntry {
+                client: GooglePlayClient::new_for_abis(
+                    device_name,
+                    &abis,
+                    &email,
+                    &aas_token,
+                    channel,
+                )?,
+                logged_in_at_ms: None,
+            }
+        };
+        // Login mutates a request-local copy. Abandoning this future cannot strand
+        // future requests on a shared asynchronous mutex.
+        entry.client.initialize().await?;
+        entry.logged_in_at_ms = Some(Date::now().as_millis());
         self.clients
-            .get(&key)
-            .map(|entry| &entry.client)
-            .ok_or_else(|| format!("client missing for channel {channel}"))
+            .lock()
+            .map_err(|_| "Client session cache is unavailable".to_string())?
+            .insert(key, entry.clone());
+        Ok(entry.client)
     }
 
     /// Get latest app details and merged download info across download targets.
@@ -121,7 +131,7 @@ impl ClientRegistry {
     /// details cannot be fetched, the latest version cannot be determined,
     /// or all per-ABI downloads fail.
     pub async fn get_download_info(
-        &mut self,
+        &self,
         package_name: &str,
         channel: Channel,
     ) -> Result<Option<(DetailsResponse, DownloadInfo)>, String> {
@@ -223,19 +233,89 @@ fn push_unique(
     }
 }
 
-pub type SharedClientRegistry = Arc<Mutex<ClientRegistry>>;
+pub type SharedClientRegistry = Arc<ClientRegistry>;
 
-/// Isolate-global registry. Clients log in once and are reused across
-/// requests instead of performing a fresh device check-in per request
-/// (which reads as suspicious activity server-side).
-static GLOBAL_REGISTRY: OnceLock<SharedClientRegistry> = OnceLock::new();
+// Only completed, cloneable client configuration and session tokens are cached.
+// In WASM reqwest::Client contains HTTP configuration, not request promises/streams.
+// Each request binds its own Env and releases synchronous cache locks before await.
+static GLOBAL_CLIENTS: OnceLock<Arc<ClientCache>> = OnceLock::new();
 
-/// Return the shared registry, creating it from `env` on first use.
-/// Bindings are identical for every request served by this worker version,
-/// so the first request's `env` is representative.
 #[must_use]
 pub fn shared_registry(env: &Env) -> SharedClientRegistry {
-    GLOBAL_REGISTRY
-        .get_or_init(|| Arc::new(Mutex::new(ClientRegistry::new(env.clone()))))
-        .clone()
+    Arc::new(ClientRegistry::new(env.clone()))
+}
+
+#[cfg(test)]
+#[allow(clippy::panic_in_result_fn)]
+mod tests {
+    use super::*;
+    use std::future::{Future, pending};
+    use std::task::{Context, Poll, Waker};
+
+    fn cached_client() -> Result<(Arc<ClientCache>, ClientKey), String> {
+        let key = (
+            Channel::Stable,
+            "px_9a".to_string(),
+            vec!["arm64-v8a".to_string()],
+        );
+        let client = GooglePlayClient::new_for_abis(
+            "px_9a",
+            &key.2,
+            "test@example.test",
+            "test-token",
+            Channel::Stable,
+        )?;
+        let cache = Arc::new(Mutex::new(HashMap::from([(
+            key.clone(),
+            ClientEntry {
+                client,
+                logged_in_at_ms: Some(100),
+            },
+        )])));
+        Ok((cache, key))
+    }
+
+    #[test]
+    fn abandoned_request_does_not_retain_cache_lock() -> Result<(), String> {
+        let (cache, key) = cached_client()?;
+        let request_cache = Arc::clone(&cache);
+        let request_key = key.clone();
+        let mut request = Box::pin(async move {
+            let entry = snapshot(&request_cache, &request_key)?;
+            pending::<()>().await;
+            Ok::<_, String>(entry)
+        });
+        assert!(matches!(
+            request
+                .as_mut()
+                .poll(&mut Context::from_waker(Waker::noop())),
+            Poll::Pending
+        ));
+        // Model an owner future whose completion path is lost, not normal cancellation.
+        std::mem::forget(request);
+        assert!(cache.try_lock().is_ok());
+        assert!(snapshot(&cache, &key)?.is_some());
+        Ok(())
+    }
+
+    #[test]
+    fn request_session_mutations_do_not_modify_the_cache() -> Result<(), String> {
+        let (cache, key) = cached_client()?;
+        let mut request = snapshot(&cache, &key)?.ok_or("Missing test entry")?;
+        request.logged_in_at_ms = Some(500);
+        assert_eq!(
+            snapshot(&cache, &key)?.and_then(|entry| entry.logged_in_at_ms),
+            Some(100)
+        );
+        // The copy is published only after a completed refresh.
+        cache
+            .lock()
+            .map_err(|_| "Poisoned test cache")?
+            .insert(key.clone(), request);
+        assert_eq!(
+            snapshot(&cache, &key)?.and_then(|entry| entry.logged_in_at_ms),
+            Some(500)
+        );
+        Ok(())
+    }
 }
