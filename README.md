@@ -38,8 +38,16 @@ Successful response:
     "success": true,
     "data": {
         // channel name -> details (only available channels are present)
-        "stable": { "item": {/* see single-channel shape below */} },
-        "beta": { "item": {/* ... */} }
+        "stable": {
+            "item": {
+                /* see single-channel shape below */
+            }
+        },
+        "beta": {
+            "item": {
+                /* ... */
+            }
+        }
         // "alpha" if available
     },
     "error": null
@@ -209,34 +217,6 @@ Error response:
     "error": "App not found or version unavailable"
 }
 ```
-
-## Versioned Deployments
-
-The `v2` branch is the default branch. The `v1` branch preserves the original API,
-and `feat/archiving` remains a separate feature branch. Pushes to `v*` branches
-trigger independent deployments; the workflow can also be run manually on a
-version branch. Each branch deploys to a Worker named `sniff-<branch>` using
-`sniff.madkarma.top/<branch>` and `sniff.madkarma.top/<branch>/*` routes.
-
-- `v1` deploys `sniff-v1`, preserving all `/v1/*` API URLs.
-- `v2` deploys `sniff-v2`, serving the new `/v2/*` API URLs.
-- Versioned API references are at `https://sniff.madkarma.top/v1/docs` and
-  `https://sniff.madkarma.top/v2/docs`.
-
-A proxied `AAAA` DNS record for `sniff.madkarma.top` points to the originless
-placeholder `100::`. Worker routes send `/v1/*` to `sniff-v1` and `/v2/*` to
-`sniff-v2`. The v2 branch also owns a catch-all route for redirects and 404s;
-more specific version routes take precedence. No Worker uses a custom-domain
-attachment, and the original `sniff` Worker is removed.
-
-Scalar and OpenAPI are only served at the versioned URLs. `/` redirects to
-`/v2/docs`; the old `/docs` and `/openapi.json` URLs return 404. Both Workers
-receive their Google Play credentials from the same GitHub repository secrets.
-Required secrets are `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `STABLE_EMAIL`,
-and `STABLE_AAS_TOKEN`; beta and alpha credentials are optional. The Cloudflare
-token must be able to deploy Workers, manage Worker routes, read the zone, and
-edit DNS in the `madkarma.top` zone. Deploying v2 ensures the proxied DNS record
-exists.
 
 ## Build From Source
 
