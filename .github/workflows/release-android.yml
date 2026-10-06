@@ -1,0 +1,152 @@
+name: Release Android app
+
+on:
+    workflow_dispatch:
+        inputs:
+            bump:
+                description: Android version bump
+                required: true
+                default: patch
+                type: choice
+                options:
+                    - patch
+                    - minor
+                    - major
+
+concurrency:
+    group: android-release
+    cancel-in-progress: false
+
+jobs:
+    release:
+        if: github.ref_type == 'branch' && startsWith(github.ref_name, 'v') && github.ref_name != 'v1'
+        runs-on: ubuntu-latest
+        permissions:
+            contents: write
+        env:
+            ANDROID_BUILD_TOOLS: '36.0.0'
+        steps:
+            - name: Checkout version branch
+              uses: actions/checkout@v6
+              with:
+                  ref: ${{ github.ref_name }}
+                  fetch-depth: 0
+
+            - name: Setup Bun
+              id: bun
+              uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: latest
+
+            - name: Bump Android version
+              id: version
+              env:
+                  VERSION_BUMP: ${{ inputs.bump }}
+              run: |
+                  bun - <<'JS'
+                  import { $ } from 'bun';
+                  import { appendFile } from 'node:fs/promises';
+                  const branch = process.env.GITHUB_REF_NAME;
+                  if (!/^v[0-9]+$/.test(branch) || BigInt(branch.slice(1)) < 2n) throw new Error('Android releases require v2 or newer');
+                  const path = 'android-app/app/build.gradle.kts';
+                  let source = await Bun.file(path).text();
+                  function version(config) {
+                    const name = config.match(/^\s*versionName = "(\d+\.\d+(?:\.\d+)?)"\s*$/m)?.[1];
+                    const code = Number(config.match(/^\s*versionCode = (\d+)\s*$/m)?.[1]);
+                    if (!name || !Number.isSafeInteger(code) || code < 1) throw new Error('Invalid Android version');
+                    return { name: name.split('.').map(Number).concat(0).slice(0, 3), code };
+                  }
+                  const current = version(source);
+                  const tags = (await $`git tag --list ${'android-v*'} --sort=-version:refname`.text()).trim().split('\n');
+                  const previous = tags.find(tag => /^android-v\d+\.\d+\.\d+$/.test(tag));
+                  if (previous) {
+                    const released = version(await $`git show ${previous + ':' + path}`.text());
+                    if (Bun.semver.order(released.name.join('.'), current.name.join('.')) > 0) current.name = released.name;
+                    current.code = Math.max(current.code, released.code);
+                  }
+                  const index = ['major', 'minor', 'patch'].indexOf(process.env.VERSION_BUMP);
+                  if (index < 0) throw new Error('Choose a major, minor, or patch bump');
+                  current.name[index] += 1;
+                  current.name.fill(0, index + 1);
+                  const name = current.name.join('.');
+                  const code = current.code + 1;
+                  if (code > 2_100_000_000) throw new Error('Android versionCode limit exceeded');
+                  source = source.replace(/^(\s*versionCode = )\d+/m, `$1${code}`).replace(/^(\s*versionName = )"[^"]+"/m, `$1"${name}"`);
+                  await Bun.write(path, source);
+                  await appendFile(process.env.GITHUB_OUTPUT, `name=${name}\ncode=${code}\ntag=android-v${name}\napk=${process.env.RUNNER_TEMP}/sniff-android-${name}.apk\n`);
+                  JS
+
+            - name: Setup Java
+              uses: actions/setup-java@v5
+              with:
+                  distribution: temurin
+                  java-version: '21'
+
+            - name: Setup Android SDK
+              uses: android-actions/setup-android@v4
+              with:
+                  packages: 'platform-tools platforms;android-37.0 build-tools;36.0.0'
+                  log-accepted-android-sdk-licenses: false
+
+            - name: Setup Gradle
+              uses: gradle/actions/setup-gradle@v6
+
+            - name: Build release APK
+              run: |
+                  bun - <<'JS'
+                  import { $ } from 'bun';
+                  await $`./android-app/gradlew -p android-app --no-daemon :app:assembleRelease`;
+                  JS
+
+            - name: Sign and verify APK
+              env:
+                  ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+                  ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+                  ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+                  ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+                  RELEASE_APK: ${{ steps.version.outputs.apk }}
+              run: |
+                  bun - <<'JS'
+                  import { $ } from 'bun';
+                  import { writeFile } from 'node:fs/promises';
+                  for (const name of ['ANDROID_KEYSTORE_BASE64', 'ANDROID_KEYSTORE_PASSWORD', 'ANDROID_KEY_ALIAS', 'ANDROID_KEY_PASSWORD']) {
+                    if (!process.env[name]) throw new Error(`GitHub secret ${name} is missing or empty`);
+                  }
+                  const keystore = `${process.env.RUNNER_TEMP}/sniff-android-release.keystore`;
+                  const aligned = `${process.env.RUNNER_TEMP}/sniff-android-aligned.apk`;
+                  const tools = `${process.env.ANDROID_HOME}/build-tools/${process.env.ANDROID_BUILD_TOOLS}`;
+                  await writeFile(keystore, Buffer.from(process.env.ANDROID_KEYSTORE_BASE64, 'base64'), { mode: 0o600 });
+                  await $`${tools}/zipalign -P 16 -f 4 android-app/app/build/outputs/apk/release/app-release-unsigned.apk ${aligned}`;
+                  await $`${tools}/apksigner sign --ks ${keystore} --ks-key-alias ${process.env.ANDROID_KEY_ALIAS} --ks-pass env:ANDROID_KEYSTORE_PASSWORD --key-pass env:ANDROID_KEY_PASSWORD --v1-signing-enabled false --v2-signing-enabled true --v3-signing-enabled true --v4-signing-enabled false --out ${process.env.RELEASE_APK} ${aligned}`;
+                  await $`${tools}/apksigner verify --verbose ${process.env.RELEASE_APK}`;
+                  await $`${tools}/zipalign -c -P 16 4 ${process.env.RELEASE_APK}`;
+                  JS
+
+            - name: Commit version and publish release
+              env:
+                  GH_TOKEN: ${{ github.token }}
+                  RELEASE_VERSION: ${{ steps.version.outputs.name }}
+                  RELEASE_TAG: ${{ steps.version.outputs.tag }}
+                  RELEASE_APK: ${{ steps.version.outputs.apk }}
+              run: |
+                  bun - <<'JS'
+                  import { $ } from 'bun';
+                  const { GITHUB_REF_NAME: branch, GITHUB_REPOSITORY: repo, RELEASE_VERSION: version, RELEASE_TAG: tag, RELEASE_APK: apk } = process.env;
+                  await $`git config user.name ${'github-actions[bot]'}`;
+                  await $`git config user.email 41898282+github-actions[bot]@users.noreply.github.com`;
+                  await $`git add -- android-app/app/build.gradle.kts`;
+                  await $`git commit -m ${'chore(android): release ' + version} --only -- android-app/app/build.gradle.kts`;
+                  await $`git tag -a ${tag} -m ${'Sniff Android ' + version}`;
+                  await $`git push --atomic origin ${'HEAD:refs/heads/' + branch} ${'refs/tags/' + tag}`;
+                  await $`gh release create ${tag} ${apk} --repo ${repo} --verify-tag --title ${'Sniff Android ' + version} --generate-notes`;
+                  JS
+
+            - name: Remove signing files
+              if: always() && steps.bun.outcome == 'success'
+              run: |
+                  bun - <<'JS'
+                  import { rm } from 'node:fs/promises';
+                  await Promise.all(['sniff-android-release.keystore', 'sniff-android-aligned.apk'].map(
+                    name => rm(`${process.env.RUNNER_TEMP}/${name}`, { force: true })
+                  ));
+                  JS
