@@ -249,7 +249,7 @@ It prints the AAS token. Repeat for every account you plan to use.
 Create `.dev.vars` (gitignored, picked up automatically by `wrangler dev`):
 
 ```
-DEVICE_NAME="sm_a13_5g"
+DEVICE_NAME="px_9a"
 STABLE_EMAIL="..."
 STABLE_AAS_TOKEN="..."
 BETA_EMAIL="..."
@@ -279,7 +279,7 @@ cargo clippy --all -- -D warnings
 
 The following environment variables are required:
 
-- `DEVICE_NAME`: Device identifier for Google Play API (default `sm_a13_5g` in `wrangler.toml`)
+- `DEVICE_NAME`: Device identifier for metadata requests (default `px_9a` in `wrangler.toml`); download targets remain independent
 - `STABLE_EMAIL`: Email for stable track access
 - `STABLE_AAS_TOKEN`: Authentication token for stable track
 - `BETA_EMAIL`: Email enrolled in beta programs
