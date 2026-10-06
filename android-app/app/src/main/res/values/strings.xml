@@ -7,7 +7,7 @@
     <string name="beta">Beta</string>
     <string name="alpha">Alpha</string>
     <string name="download_apk">Download APK</string>
-    <string name="resign">Resign</string>
+    <string name="resign">Re-sign</string>
     <string name="cancel">Cancel</string>
     <string name="save_apk">Save APK</string>
     <string name="share_apk">Share APK</string>

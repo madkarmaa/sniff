@@ -152,6 +152,7 @@ private fun DownloadForm(
             role = Role.Checkbox,
             onValueChange = onResignChange,
         ),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Checkbox(checked = resign, onCheckedChange = null, enabled = enabled)
