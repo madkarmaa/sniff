@@ -45,6 +45,7 @@ impl Channel {
     }
 }
 
+#[derive(Clone)]
 pub struct GooglePlayClient {
     client: Gpapi,
     channel: Channel,

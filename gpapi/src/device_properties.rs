@@ -5,7 +5,7 @@ struct EncodedDeviceProperties {
     pub extra_info: HashMap<String, String>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[allow(dead_code)]
 struct DeviceProperties {
     pub device_configuration: DeviceConfigurationProto,

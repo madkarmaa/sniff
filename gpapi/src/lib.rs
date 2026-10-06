@@ -90,7 +90,7 @@ pub type DownloadInfo = (
     DexMetadataURL,
 );
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Gpapi {
     locale: String,
     timezone: String,

@@ -1,5 +1,3 @@
-#![allow(clippy::await_holding_lock)]
-
 use crate::client_registry::SharedClientRegistry;
 use crate::google_play_client::Channel;
 use crate::openapi_schema::{
@@ -87,12 +85,7 @@ pub async fn get_details_multi(
     package_name: String,
     client_registry: SharedClientRegistry,
 ) -> Result<Response> {
-    match client_registry
-        .lock()
-        .await
-        .get_details_multi(&package_name)
-        .await
-    {
+    match client_registry.get_details_multi(&package_name).await {
         Ok(Some(details_map)) => {
             let serialized_map: HashMap<String, JsonDetails> = details_map
                 .into_iter()
@@ -197,8 +190,6 @@ pub async fn get_details_single(
     };
 
     let result = client_registry
-        .lock()
-        .await
         .get_details_with_fallback(&package_name, channel)
         .await;
 
@@ -296,8 +287,6 @@ pub async fn get_download_info(
     };
 
     let result = client_registry
-        .lock()
-        .await
         .get_download_info(&package_name, channel, Some(version_code))
         .await;
 
