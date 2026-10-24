@@ -49,7 +49,6 @@ use utoipa::{OpenApi, ToSchema};
 pub struct ApiDoc;
 
 #[derive(Serialize, Deserialize, ToSchema)]
-#[allow(clippy::option_if_let_else)]
 pub struct ApiResponse<T> {
     pub success: bool,
     pub data: Option<T>,
@@ -279,31 +278,23 @@ pub struct AppInfoContainer {
 }
 
 impl From<gpapi::DownloadInfo> for DownloadInfo {
-    fn from(gpapi_download_info: gpapi::DownloadInfo) -> Self {
-        let (main_apk_url, splits_data, additional_files_data, dex_metadata_url) =
-            gpapi_download_info;
-
-        let splits = splits_data
-            .into_iter()
-            .map(|(name, url)| SplitFile {
-                name,
-                download_url: url,
-            })
-            .collect();
-
-        let additional_files = additional_files_data
-            .into_iter()
-            .map(|(filename, url)| AdditionalFile {
-                filename,
-                download_url: url,
-            })
-            .collect();
-
+    fn from(info: gpapi::DownloadInfo) -> Self {
         Self {
-            main_apk_url,
-            splits,
-            additional_files,
-            dex_metadata_url,
+            main_apk_url: info.main_apk_url,
+            splits: info
+                .splits
+                .into_iter()
+                .map(|(name, download_url)| SplitFile { name, download_url })
+                .collect(),
+            additional_files: info
+                .additional_files
+                .into_iter()
+                .map(|(filename, download_url)| AdditionalFile {
+                    filename,
+                    download_url,
+                })
+                .collect(),
+            dex_metadata_url: info.dex_metadata_url,
         }
     }
 }
@@ -340,18 +331,18 @@ mod tests {
             ..Default::default()
         };
         let metadata = serde_json::to_value(SerializableDetailsResponse(details.clone()))?;
-        let download = DownloadInfo::from((
-            Some("https://example.com/main.apk".into()),
-            vec![(
+        let download = DownloadInfo::from(gpapi::DownloadInfo {
+            main_apk_url: Some("https://example.com/main.apk".into()),
+            splits: vec![(
                 Some("config.arm64_v8a".into()),
                 Some("https://example.com/arm64.apk".into()),
             )],
-            vec![(
+            additional_files: vec![(
                 Some("main.123.com.example.obb".into()),
                 Some("https://example.com/main.obb".into()),
             )],
-            Some("https://example.com/main.dm".into()),
-        ));
+            dex_metadata_url: Some("https://example.com/main.dm".into()),
+        });
         let urls = serde_json::to_value(&download)?;
         let response = serde_json::to_value(ApiResponse {
             success: true,

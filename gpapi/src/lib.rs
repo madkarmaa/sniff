@@ -55,6 +55,9 @@
 //! # }
 //! ```
 
+// On wasm, reqwest futures wrap JavaScript promises, which are never `Send`.
+#![cfg_attr(target_arch = "wasm32", allow(clippy::future_not_send))]
+
 mod consts;
 pub mod error;
 
@@ -69,9 +72,10 @@ use std::io::Cursor;
 use crate::error::{Error as GpapiError, ErrorKind as GpapiErrorKind};
 
 use googleplay_protobuf::{
-    AcceptTosResponse, AndroidCheckinProto, AndroidCheckinRequest, AndroidCheckinResponse,
-    BulkDetailsRequest, BulkDetailsResponse, DetailsResponse, DeviceConfigurationProto,
-    ResponseWrapper, UploadDeviceConfigRequest, UploadDeviceConfigResponse,
+    AcceptTosResponse, AndroidBuildProto, AndroidCheckinProto, AndroidCheckinRequest,
+    AndroidCheckinResponse, BulkDetailsRequest, BulkDetailsResponse, DetailsResponse,
+    DeviceConfigurationProto, ResponseWrapper, UploadDeviceConfigRequest,
+    UploadDeviceConfigResponse,
 };
 
 use bincode::{Decode, Encode};
@@ -79,16 +83,18 @@ include!("device_properties.rs");
 
 static DEVICES_ENCODED: &[u8] = include_bytes!("device_properties.bin");
 
-pub type MainAPKDownloadURL = Option<String>;
-pub type SplitsDownloadInfo = Vec<(Option<String>, Option<String>)>;
-pub type AdditionalFilesDownloadInfo = Vec<(Option<String>, Option<String>)>;
-pub type DexMetadataURL = Option<String>;
-pub type DownloadInfo = (
-    MainAPKDownloadURL,
-    SplitsDownloadInfo,
-    AdditionalFilesDownloadInfo,
-    DexMetadataURL,
-);
+/// A `(name, download URL)` pair for a split APK or an additional file.
+pub type NamedDownload = (Option<String>, Option<String>);
+
+/// Download URLs returned by the Play Store delivery endpoint.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DownloadInfo {
+    pub main_apk_url: Option<String>,
+    pub splits: Vec<NamedDownload>,
+    /// Expansion files, named `main.<version>.<package>.obb` or `patch.<version>.<package>.obb`.
+    pub additional_files: Vec<NamedDownload>,
+    pub dex_metadata_url: Option<String>,
+}
 
 #[derive(Debug, Clone)]
 pub struct Gpapi {
@@ -290,16 +296,7 @@ impl Gpapi {
     /// # Arguments
     ///
     /// * `pkg_name` - A string type specifying the package's app ID, e.g. `com.instagram.android`
-    /// * `version_code` - An optinal version code, given in i32.  If omitted, the latest version will
-    ///   be used
-    ///
-    /// # Returns
-    ///
-    /// * An Option<String> to the full APK download URL, followed by a Vec<(Option<String>,
-    ///   Option<String>)> which corresponds to a list of download URLs and names for the split APK,
-    ///   then followed by another Vec<(Option<String>, Option<String>)> which corresponds to the
-    ///   download URLs and filenames for additional files and finally an Option<String> that
-    ///   contains the URL for the dexmetadata file.
+    /// * `version_code` - An optional version code. If omitted, the latest version is used.
     ///
     /// # Errors
     ///
@@ -320,11 +317,10 @@ impl Gpapi {
             None => self.get_latest_version_for_pkg_name(&pkg_name).await?,
         };
         let resp = {
-            let version_code_string = version_code.to_string();
             let mut params = HashMap::new();
             params.insert("ot", String::from("1"));
             params.insert("doc", String::from(&pkg_name));
-            params.insert("vc", version_code_string);
+            params.insert("vc", version_code.to_string());
 
             let mut headers = self.get_default_headers()?;
             headers.insert("content-length", String::from("0"));
@@ -336,34 +332,22 @@ impl Gpapi {
             && let Some(buy_response) = payload.buy_response
             && let Some(delivery_token) = buy_response.encoded_delivery_token
         {
-            return self
-                .delivery(&pkg_name, Some(version_code), &delivery_token)
-                .await;
+            return self.delivery(&pkg_name, version_code, delivery_token).await;
         }
         Err(Box::new(GpapiError::new(GpapiErrorKind::InvalidApp)))
     }
 
-    async fn delivery<S: Into<String>>(
+    async fn delivery(
         &self,
-        pkg_name: S,
-        version_code: Option<i64>,
-        delivery_token: S,
+        pkg_name: &str,
+        version_code: i64,
+        delivery_token: String,
     ) -> Result<DownloadInfo, Box<dyn Error + Send + Sync>> {
-        let pkg_name: String = pkg_name.into();
-        let delivery_token: String = delivery_token.into();
-        if self.auth_token.is_none() {
-            return Err(Box::new(GpapiError::new(GpapiErrorKind::LoginRequired)));
-        }
-        let version_code = match version_code {
-            Some(v) => v,
-            None => self.get_latest_version_for_pkg_name(&pkg_name).await?,
-        };
         let resp = {
-            let version_code_string = version_code.to_string();
             let mut req = HashMap::new();
             req.insert("ot", String::from("1"));
-            req.insert("doc", pkg_name.clone());
-            req.insert("vc", version_code_string);
+            req.insert("doc", String::from(pkg_name));
+            req.insert("vc", version_code.to_string());
             req.insert("dtok", delivery_token);
             self.execute_request("delivery", Some(req), None, self.get_default_headers()?)
                 .await?
@@ -372,35 +356,32 @@ impl Gpapi {
             && let Some(delivery_response) = payload.delivery_response
             && let Some(app_delivery_data) = delivery_response.app_delivery_data
         {
-            let mut splits = Vec::new();
-            for app_split_delivery_data in app_delivery_data.split_delivery_data {
-                splits.push((
-                    app_split_delivery_data.name,
-                    app_split_delivery_data.download_url,
-                ));
-            }
-            let mut additional_files: Vec<(Option<String>, Option<String>)> = Vec::new();
-            for additional_file in app_delivery_data.additional_file {
-                if let Some(file_type) = additional_file.file_type
-                    && let Some(version_code) = additional_file.version_code
-                {
-                    let main_patch = match file_type {
-                        0 => "main",
-                        _ => "patch",
+            let splits = app_delivery_data
+                .split_delivery_data
+                .into_iter()
+                .map(|split| (split.name, split.download_url))
+                .collect();
+            let additional_files = app_delivery_data
+                .additional_file
+                .into_iter()
+                .filter_map(|file| {
+                    let kind = if file.file_type? == 0 {
+                        "main"
+                    } else {
+                        "patch"
                     };
-                    let filename = format!("{main_patch}.{version_code}.{pkg_name}.obb");
-                    additional_files.push((Some(filename), additional_file.download_url));
-                }
-            }
-            let dex_metadata_url = app_delivery_data
-                .dex_metadata
-                .and_then(|dex_metadata| dex_metadata.download_url);
-            return Ok((
-                app_delivery_data.download_url,
+                    let filename = format!("{kind}.{}.{pkg_name}.obb", file.version_code?);
+                    Some((Some(filename), file.download_url))
+                })
+                .collect();
+            return Ok(DownloadInfo {
+                main_apk_url: app_delivery_data.download_url,
                 splits,
                 additional_files,
-                dex_metadata_url,
-            ));
+                dex_metadata_url: app_delivery_data
+                    .dex_metadata
+                    .and_then(|dex_metadata| dex_metadata.download_url),
+            });
         }
         Err(Box::new(GpapiError::new(GpapiErrorKind::InvalidApp)))
     }
@@ -486,20 +467,9 @@ impl Gpapi {
     }
 
     async fn checkin(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
-        let checkin = self.device_properties.android_checkin.clone();
-
-        let build_device = checkin
-            .build
-            .as_ref()
-            .ok_or_else(|| Box::new(GpapiError::new(GpapiErrorKind::InvalidResponse)))?
-            .device
-            .as_ref()
-            .ok_or_else(|| Box::new(GpapiError::new(GpapiErrorKind::InvalidResponse)))?
-            .clone();
-
         let req = AndroidCheckinRequest {
             id: Some(0),
-            checkin: Some(checkin),
+            checkin: Some(self.device_properties.android_checkin.clone()),
             locale: Some(self.locale.clone()),
             time_zone: Some(self.timezone.clone()),
             version: Some(3),
@@ -510,14 +480,8 @@ impl Gpapi {
         let mut bytes = Vec::with_capacity(req.encoded_len());
         req.encode(&mut bytes)?;
 
-        let build_id = self
-            .device_properties
-            .extra_info
-            .get("Build.ID")
-            .ok_or_else(|| Box::new(GpapiError::new(GpapiErrorKind::InvalidResponse)))?
-            .clone();
         let mut headers = HashMap::new();
-        self.append_auth_headers(&mut headers, build_device, build_id);
+        self.append_auth_headers(&mut headers)?;
 
         let resp = self.execute_checkin_request(&bytes, headers).await?;
         self.device_checkin_consistency_token = resp.device_checkin_consistency_token;
@@ -531,12 +495,27 @@ impl Gpapi {
         mut auth_headers: HashMap<&str, String>,
     ) -> Result<AndroidCheckinResponse, Box<dyn Error + Send + Sync>> {
         auth_headers.insert("content-type", String::from("application/x-protobuf"));
-        auth_headers.insert("host", String::from("android.clients.google.com"));
         let bytes = self
             .execute_request_helper("checkin", None, Some(msg), auth_headers, false)
             .await?;
         let resp = AndroidCheckinResponse::decode(&mut Cursor::new(bytes))?;
         Ok(resp)
+    }
+
+    fn build(&self) -> Result<&AndroidBuildProto, Box<dyn Error + Send + Sync>> {
+        self.device_properties
+            .android_checkin
+            .build
+            .as_ref()
+            .ok_or_else(invalid_response)
+    }
+
+    fn extra_info(&self, key: &str) -> Result<&str, Box<dyn Error + Send + Sync>> {
+        self.device_properties
+            .extra_info
+            .get(key)
+            .map(String::as_str)
+            .ok_or_else(invalid_response)
     }
 
     fn get_default_headers(&self) -> Result<HashMap<&str, String>, Box<dyn Error + Send + Sync>> {
@@ -553,52 +532,25 @@ impl Gpapi {
             headers.insert("Authorization", format!("Bearer {auth_token}"));
         }
 
-        let build = self
-            .device_properties
-            .android_checkin
-            .clone()
-            .build
-            .ok_or_else(|| Box::new(GpapiError::new(GpapiErrorKind::InvalidResponse)))?;
-        let device_configuration = self.device_properties.device_configuration.clone();
-
-        let invalid = || Box::new(GpapiError::new(GpapiErrorKind::InvalidResponse));
-        let vending_version_string = self
-            .device_properties
-            .extra_info
-            .get("Vending.versionString")
-            .ok_or_else(invalid)?;
-        let vending_version = self
-            .device_properties
-            .extra_info
-            .get("Vending.version")
-            .ok_or_else(invalid)?;
-        let sdk_version = build.sdk_version.as_ref().ok_or_else(invalid)?.to_string();
-        let device = build.device.as_ref().ok_or_else(invalid)?;
-        let product = build.product.as_ref().ok_or_else(invalid)?;
-        let build_product = build.build_product.as_ref().ok_or_else(invalid)?;
-        let release = self
-            .device_properties
-            .extra_info
-            .get("Build.VERSION.RELEASE")
-            .ok_or_else(invalid)?;
-        let model = build.model.as_ref().ok_or_else(invalid)?;
-        let build_id = self
-            .device_properties
-            .extra_info
-            .get("Build.ID")
-            .ok_or_else(invalid)?;
-
+        let build = self.build()?;
         let build_configuration = BuildConfiguration::new(
-            vending_version_string,
-            vending_version,
-            &sdk_version,
-            device,
-            product,
-            build_product,
-            release,
-            model,
-            build_id,
-            &device_configuration.native_platform.join(";"),
+            self.extra_info("Vending.versionString")?,
+            self.extra_info("Vending.version")?,
+            &build.sdk_version.ok_or_else(invalid_response)?.to_string(),
+            build.device.as_deref().ok_or_else(invalid_response)?,
+            build.product.as_deref().ok_or_else(invalid_response)?,
+            build
+                .build_product
+                .as_deref()
+                .ok_or_else(invalid_response)?,
+            self.extra_info("Build.VERSION.RELEASE")?,
+            build.model.as_deref().ok_or_else(invalid_response)?,
+            self.extra_info("Build.ID")?,
+            &self
+                .device_properties
+                .device_configuration
+                .native_platform
+                .join(";"),
         );
 
         headers.insert("user-agent", build_configuration.user_agent());
@@ -643,11 +595,13 @@ impl Gpapi {
     fn append_auth_headers(
         &self,
         headers: &mut HashMap<&str, String>,
-        build_device: impl Into<String>,
-        build_id: impl Into<String>,
-    ) {
-        let build_device: String = build_device.into();
-        let build_id: String = build_id.into();
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+        let build_device = self
+            .build()?
+            .device
+            .as_deref()
+            .ok_or_else(invalid_response)?;
+        let build_id = self.extra_info("Build.ID")?;
         headers.insert(
             "app",
             String::from(consts::defaults::DEFAULT_ANDROID_VENDING),
@@ -659,6 +613,7 @@ impl Gpapi {
         if let Some(gsf_id) = self.gsf_id {
             headers.insert("device", format!("{gsf_id:x}"));
         }
+        Ok(())
     }
 
     fn append_default_auth_params(
@@ -669,24 +624,17 @@ impl Gpapi {
             params.insert("androidId", format!("{gsf_id:x}"));
         }
 
-        let build = self
-            .device_properties
-            .android_checkin
-            .clone()
-            .build
-            .ok_or_else(|| Box::new(GpapiError::new(GpapiErrorKind::InvalidResponse)))?;
-        let invalid = || Box::new(GpapiError::new(GpapiErrorKind::InvalidResponse));
+        let build = self.build()?;
         params.insert(
             "sdk_version",
-            build.sdk_version.as_ref().ok_or_else(invalid)?.to_string(),
+            build.sdk_version.ok_or_else(invalid_response)?.to_string(),
         );
         params.insert("Email", self.email.clone());
         params.insert(
             "google_play_services_version",
             build
                 .google_services
-                .as_ref()
-                .ok_or_else(invalid)?
+                .ok_or_else(invalid_response)?
                 .to_string(),
         );
         params.insert(
@@ -765,24 +713,7 @@ impl Gpapi {
 
         let headers = {
             let mut headers = HashMap::new();
-            let build_device = self
-                .device_properties
-                .android_checkin
-                .clone()
-                .build
-                .as_ref()
-                .ok_or_else(|| Box::new(GpapiError::new(GpapiErrorKind::InvalidResponse)))?
-                .device
-                .as_ref()
-                .ok_or_else(|| Box::new(GpapiError::new(GpapiErrorKind::InvalidResponse)))?
-                .clone();
-            let build_id = self
-                .device_properties
-                .extra_info
-                .get("Build.ID")
-                .ok_or_else(|| Box::new(GpapiError::new(GpapiErrorKind::InvalidResponse)))?
-                .clone();
-            self.append_auth_headers(&mut headers, build_device, build_id);
+            self.append_auth_headers(&mut headers)?;
             headers.insert("content-length", String::from("0"));
             headers
         };
@@ -898,18 +829,11 @@ impl Gpapi {
         headers: HashMap<&str, String>,
         fdfe: bool,
     ) -> Result<Bytes, Box<dyn Error + Send + Sync>> {
+        let base_url = consts::defaults::DEFAULT_BASE_URL;
         let mut url = if fdfe {
-            Url::parse(&format!(
-                "{}/fdfe/{}",
-                consts::defaults::DEFAULT_BASE_URL,
-                endpoint
-            ))?
+            Url::parse(&format!("{base_url}/fdfe/{endpoint}"))?
         } else {
-            Url::parse(&format!(
-                "{}/{}",
-                consts::defaults::DEFAULT_BASE_URL,
-                endpoint
-            ))?
+            Url::parse(&format!("{base_url}/{endpoint}"))?
         };
 
         if let Some(query) = query {
@@ -988,11 +912,13 @@ impl AuthRequest {
 }
 
 fn form_post(params: &HashMap<String, String>) -> String {
-    params
-        .iter()
-        .map(|(k, v)| format!("{k}={v}"))
-        .collect::<Vec<String>>()
-        .join("&")
+    form_urlencoded::Serializer::new(String::new())
+        .extend_pairs(params)
+        .finish()
+}
+
+fn invalid_response() -> Box<dyn Error + Send + Sync> {
+    Box::new(GpapiError::new(GpapiErrorKind::InvalidResponse))
 }
 
 #[derive(Debug, Clone)]
@@ -1081,6 +1007,12 @@ mod tests {
         expected_reply.insert("foo".to_string(), "BAR".to_string());
         let parsed_form_reply = parse_form_reply(form_reply);
         assert_eq!(expected_reply, parsed_form_reply);
+    }
+
+    #[test]
+    fn form_post_encodes_values() {
+        let params = HashMap::from([(String::from("Token"), String::from("oauth2_4/a+b=c&d"))]);
+        assert_eq!(form_post(&params), "Token=oauth2_4%2Fa%2Bb%3Dc%26d");
     }
 
     #[test]

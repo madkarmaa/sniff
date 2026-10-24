@@ -32,6 +32,14 @@ fn route_param(ctx: &RouteContext<SharedClientRegistry>, name: &str) -> Result<S
         .ok_or_else(|| worker::Error::RustError(format!("missing {name}")))
 }
 
+// The router only accepts `fn(Request, RouteContext<_>)` handlers.
+#[allow(clippy::needless_pass_by_value)]
+fn redirect_to_docs(req: Request, _ctx: RouteContext<SharedClientRegistry>) -> Result<Response> {
+    let mut url = req.url()?;
+    url.set_path("/v2/docs");
+    Response::redirect(url)
+}
+
 // Workers run on a single-threaded WASM runtime where `Send` futures are not
 // required. The fetch future is large because it holds the router plus cloned
 // `Env` and registry state across awaits.
@@ -43,21 +51,9 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
     let router = Router::with_data(shared_registry(&env));
 
     router
-        .get("/", |req, _ctx| {
-            let mut url = req.url()?;
-            url.set_path("/v2/docs");
-            Response::redirect(url)
-        })
-        .get("/v2", |req, _ctx| {
-            let mut url = req.url()?;
-            url.set_path("/v2/docs");
-            Response::redirect(url)
-        })
-        .get("/v2/", |req, _ctx| {
-            let mut url = req.url()?;
-            url.set_path("/v2/docs");
-            Response::redirect(url)
-        })
+        .get("/", redirect_to_docs)
+        .get("/v2", redirect_to_docs)
+        .get("/v2/", redirect_to_docs)
         .get("/v2/docs", |_req, _ctx| {
             let headers = Headers::new();
             headers.set("Content-Type", "text/html;charset=UTF-8")?;

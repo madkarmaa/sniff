@@ -2,24 +2,22 @@
   <img src="./.github/logo.gif" alt="sniffer from minecraft" width="320">
 </h1>
 
-**Sniff** is a specialized API service designed to retrieve Google Play Store app
-details across different release channels (Stable, Beta, Alpha). It provides a clean
-interface to access app metadata including version information, changelog, download
-sizes, and other details for Android applications.
+Sniff is a Cloudflare Worker that returns Google Play app details and download URLs
+for the stable, beta, and alpha release channels. The details include the version
+code, changelog, and download size.
 
 ## Features
 
-- **Multi-Channel Support**: Access app details from Stable, Beta, and Alpha channels (where available)
-- **Intelligent Track Detection**: Automatically identifies which channels are available for specific apps
-- **Multi-Arch Downloads**: Download info merges splits across devices (arm64-v8a, armeabi-v7a, plus density/locale) so one call lists every APK split the app ships
-- **Unified API**: One endpoint returns app details and download URLs for the latest version
+- One endpoint returns app details and download URLs for the latest version.
+- Beta and alpha channels work for any app whose testing program the channel's account has joined.
+- Splits are merged across arm64-v8a, armeabi-v7a, x86, and x86_64 devices, so one call lists every APK split the app ships.
 
-## API Endpoints
+## API endpoints
 
 Interactive API reference is served at `/v2/docs`; the OpenAPI document is
 available at `/v2/openapi.json`.
 
-### Get Latest App Details and Download Info
+### Get latest app details and download info
 
 ```
 GET /v2/download/:package_name/:channel
@@ -43,8 +41,8 @@ requests fail are skipped; a partial merge still returns 200.
 **Possible channels:**
 
 - `stable` - Production release (always available)
-- `beta` - Beta program release (only available for certain apps)
-- `alpha` - Alpha program release (only available for certain apps)
+- `beta` - Beta program release (when the `BETA_*` account has joined the app's testing program)
+- `alpha` - Alpha program release (when the `ALPHA_*` account has joined the app's testing program)
 
 **Response Format:**
 
@@ -159,12 +157,7 @@ Error response:
 }
 ```
 
-An invalid channel returns 400, an app not found returns 404, and upstream failures
-return 500. Separate details endpoints are not part of v2; clients should use the
-v2 download endpoint for both metadata and downloads. The `v1` branch continues
-to serve the original v1 API for existing clients.
-
-## Build From Source
+## Build from source
 
 Prerequisites:
 
@@ -219,11 +212,13 @@ curl -fsSL -A "Mozilla/5.0" http://localhost:8787/v2/download/com.discord/stable
 cargo check --all
 cargo fmt --all -- --check
 cargo clippy --all -- -D warnings
+cargo clippy -p sniff --target wasm32-unknown-unknown -- -D warnings
 ```
 
-## Environment Variables
+## Environment variables
 
-The following environment variables are required:
+`DEVICE_NAME` and the `STABLE_*` pair are required. The `BETA_*` and `ALPHA_*` pairs
+are only needed to serve those channels.
 
 - `DEVICE_NAME`: Device identifier for metadata requests (default `px_9a` in `wrangler.toml`); download targets remain independent
 - `STABLE_EMAIL`: Email for stable track access

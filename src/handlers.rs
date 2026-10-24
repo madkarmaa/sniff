@@ -1,4 +1,4 @@
-use crate::client_registry::SharedClientRegistry;
+use crate::client_registry::{DownloadLookup, SharedClientRegistry};
 use crate::google_play_client::Channel;
 use crate::openapi_schema::{
     ApiResponse, DownloadInfo, DownloadResponse, ErrorResponse, SerializableDetailsResponse,
@@ -60,7 +60,7 @@ fn error_response(status: u16, message: String) -> Result<Response> {
              "error": null
          })
         ),
-        (status = 400, description = "Invalid channel",
+        (status = 400, description = "Invalid channel, or channel not available for the package",
          body = ErrorResponse,
          example = json!({
              "success": false,
@@ -106,13 +106,13 @@ pub async fn get_download_info(
         Ok(ch) => ch,
         Err(e) => return error_response(400, e),
     };
-
     let result = client_registry
         .get_download_info(&package_name, channel)
         .await;
 
     match result {
-        Ok(Some((details, download_info))) => {
+        Ok(DownloadLookup::Found(found)) => {
+            let (details, download_info) = *found;
             let data = DownloadResponse {
                 details: JsonDetails(details),
                 download: DownloadInfo::from(download_info),
@@ -124,7 +124,13 @@ pub async fn get_download_info(
             };
             Ok(Response::from_json(&response)?)
         }
-        Ok(None) => error_response(404, format!("App '{package_name}' not found")),
+        Ok(DownloadLookup::NotFound) => {
+            error_response(404, format!("App '{package_name}' not found"))
+        }
+        Ok(DownloadLookup::ChannelUnavailable) => error_response(
+            400,
+            format!("Channel '{channel}' is not available for package '{package_name}'"),
+        ),
         Err(e) => error_response(500, e),
     }
 }

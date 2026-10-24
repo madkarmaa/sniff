@@ -25,24 +25,31 @@ mod details_response_serde {
         };
     }
 
+    macro_rules! seq_wrap {
+        ($state:ident, $name:literal, $items:expr, $wrap:ident) => {
+            if !$items.is_empty() {
+                let wrapped: Vec<$wrap> = $items.iter().map($wrap).collect();
+                $state.serialize_field($name, &wrapped)?;
+            }
+        };
+    }
+
     pub fn serialize<S>(details: &DetailsResponse, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let mut state = serializer.serialize_struct("DetailsResponse", 10)?;
+        let mut state = serializer.serialize_struct("DetailsResponse", 5)?;
 
         opt_wrap!(state, "item", details.item, SerializableItem);
 
         opt_field!(state, "footer_html", details.footer_html);
 
-        if !details.discovery_badge.is_empty() {
-            let serializable_badges: Vec<SerializableDiscoveryBadge> = details
-                .discovery_badge
-                .iter()
-                .map(SerializableDiscoveryBadge)
-                .collect();
-            state.serialize_field("discovery_badge", &serializable_badges)?;
-        }
+        seq_wrap!(
+            state,
+            "discovery_badge",
+            details.discovery_badge,
+            SerializableDiscoveryBadge
+        );
 
         opt_field!(state, "enable_reviews", details.enable_reviews);
 
@@ -72,15 +79,13 @@ mod details_response_serde {
             S: Serializer,
         {
             let item = self.0;
-            let mut state = serializer.serialize_struct("Item", 20)?;
+            let mut state = serializer.serialize_struct("Item", 15)?;
 
             opt_field!(state, "id", item.id);
 
             opt_field!(state, "sub_id", item.sub_id);
 
-            if let Some(ref value) = item.r#type {
-                state.serialize_field("type", value)?;
-            }
+            opt_field!(state, "type", item.r#type);
 
             opt_field!(state, "category_id", item.category_id);
 
@@ -90,11 +95,7 @@ mod details_response_serde {
 
             opt_field!(state, "description_html", item.description_html);
 
-            if !item.offer.is_empty() {
-                let serializable_offers: Vec<SerializableOffer> =
-                    item.offer.iter().map(SerializableOffer).collect();
-                state.serialize_field("offer", &serializable_offers)?;
-            }
+            seq_wrap!(state, "offer", item.offer, SerializableOffer);
 
             opt_wrap!(state, "details", item.details, SerializableDocumentDetails);
 
@@ -128,7 +129,7 @@ mod details_response_serde {
             S: Serializer,
         {
             let badge = self.0;
-            let mut state = serializer.serialize_struct("DiscoveryBadge", 14)?;
+            let mut state = serializer.serialize_struct("DiscoveryBadge", 13)?;
 
             opt_field!(state, "label", badge.label);
 
@@ -182,23 +183,19 @@ mod details_response_serde {
             let features = self.0;
             let mut state = serializer.serialize_struct("Features", 2)?;
 
-            if !features.feature_presence.is_empty() {
-                let serializable_features: Vec<SerializableFeature> = features
-                    .feature_presence
-                    .iter()
-                    .map(SerializableFeature)
-                    .collect();
-                state.serialize_field("feature_presence", &serializable_features)?;
-            }
+            seq_wrap!(
+                state,
+                "feature_presence",
+                features.feature_presence,
+                SerializableFeature
+            );
 
-            if !features.feature_rating.is_empty() {
-                let serializable_ratings: Vec<SerializableFeature> = features
-                    .feature_rating
-                    .iter()
-                    .map(SerializableFeature)
-                    .collect();
-                state.serialize_field("feature_rating", &serializable_ratings)?;
-            }
+            seq_wrap!(
+                state,
+                "feature_rating",
+                features.feature_rating,
+                SerializableFeature
+            );
 
             state.end()
         }
@@ -240,7 +237,7 @@ mod details_response_serde {
             S: Serializer,
         {
             let link = self.0;
-            let mut state = serializer.serialize_struct("DiscoveryBadgeLink", 3)?;
+            let mut state = serializer.serialize_struct("DiscoveryBadgeLink", 1)?;
 
             opt_wrap!(state, "link", link.link, SerializableLink);
 
@@ -254,7 +251,7 @@ mod details_response_serde {
             S: Serializer,
         {
             let image = self.0;
-            let mut state = serializer.serialize_struct("Image", 5)?;
+            let mut state = serializer.serialize_struct("Image", 1)?;
 
             opt_field!(state, "image_url", image.image_url);
 
@@ -268,7 +265,7 @@ mod details_response_serde {
             S: Serializer,
         {
             let link = self.0;
-            let mut state = serializer.serialize_struct("Link", 3)?;
+            let mut state = serializer.serialize_struct("Link", 1)?;
 
             opt_field!(state, "uri", link.uri);
 
@@ -286,15 +283,12 @@ mod details_response_serde {
 
             opt_field!(state, "title", app_info.title);
 
-            if !app_info.section.is_empty() {
-                let section: Vec<SerializableAppInfoSection> = app_info
-                    .section
-                    .iter()
-                    .map(SerializableAppInfoSection)
-                    .collect();
-
-                state.serialize_field("section", &section)?;
-            }
+            seq_wrap!(
+                state,
+                "section",
+                app_info.section,
+                SerializableAppInfoSection
+            );
 
             state.end()
         }
@@ -402,7 +396,7 @@ mod details_response_serde {
             S: Serializer,
         {
             let offer = self.0;
-            let mut state = serializer.serialize_struct("Offer", 1)?;
+            let mut state = serializer.serialize_struct("Offer", 17)?;
 
             opt_field!(state, "micros", offer.micros);
 
@@ -410,14 +404,12 @@ mod details_response_serde {
 
             opt_field!(state, "formatted_amount", offer.formatted_amount);
 
-            if !offer.converted_price.is_empty() {
-                let converted_prices: Vec<SerializableOffer> = offer
-                    .converted_price
-                    .iter()
-                    .map(SerializableOffer)
-                    .collect();
-                state.serialize_field("converted_price", &converted_prices)?;
-            }
+            seq_wrap!(
+                state,
+                "converted_price",
+                offer.converted_price,
+                SerializableOffer
+            );
 
             opt_field!(
                 state,

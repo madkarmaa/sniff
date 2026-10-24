@@ -2,8 +2,6 @@ use googleplay_protobuf::DetailsResponse;
 use gpapi::{DownloadInfo, Gpapi};
 use std::str::FromStr;
 
-const BETA_ALPHA_PACKAGES: &[&str] = &["com.discord"];
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Channel {
     Stable,
@@ -36,11 +34,22 @@ impl FromStr for Channel {
 }
 
 impl Channel {
+    /// Whether `details`, fetched with this channel's account, offer this channel.
+    ///
+    /// Beta and alpha builds are only served to accounts enrolled in the app's
+    /// testing program, which Google Play reports in the app details.
     #[must_use]
-    pub fn is_available_for_package(self, package_name: &str) -> bool {
+    pub fn is_available_in(self, details: &DetailsResponse) -> bool {
         match self {
             Self::Stable => true,
-            Self::Beta | Self::Alpha => BETA_ALPHA_PACKAGES.contains(&package_name),
+            Self::Beta | Self::Alpha => details
+                .item
+                .as_ref()
+                .and_then(|item| item.details.as_ref())
+                .and_then(|details| details.app_details.as_ref())
+                .and_then(|app_details| app_details.testing_program_info.as_ref())
+                .and_then(|info| info.subscribed)
+                .unwrap_or(false),
         }
     }
 }
@@ -116,5 +125,40 @@ impl GooglePlayClient {
         Box::pin(self.client.get_download_info(package_name, version_code))
             .await
             .map_err(|e| format!("API error for {channel} channel: {e:?}"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use googleplay_protobuf::{AppDetails, DocumentDetails, Item, TestingProgramInfo};
+
+    fn details(subscribed: Option<bool>) -> DetailsResponse {
+        DetailsResponse {
+            item: Some(Item {
+                details: Some(DocumentDetails {
+                    app_details: Some(AppDetails {
+                        testing_program_info: subscribed.map(|subscribed| TestingProgramInfo {
+                            subscribed: Some(subscribed),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn testing_channels_require_testing_program_enrollment() {
+        for channel in [Channel::Beta, Channel::Alpha] {
+            assert!(channel.is_available_in(&details(Some(true))));
+            assert!(!channel.is_available_in(&details(Some(false))));
+            assert!(!channel.is_available_in(&details(None)));
+        }
+        assert!(Channel::Stable.is_available_in(&details(None)));
     }
 }
