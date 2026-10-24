@@ -30,7 +30,8 @@ class ApkMergerTest {
 
         try {
             ApkModule.loadApkFile(File(input, "base.apk")).use { base ->
-                val version = checkNotNull(base.androidManifest.versionCode).toLong().and(0xffffffffL)
+                val version =
+                    checkNotNull(base.androidManifest.versionCode).toLong().and(0xffffffffL)
                 val preserved = File(folder, "preserved.apk")
                 ApkMerger.merge(input, preserved, base.packageName, version)
                 ApkModule.loadApkFile(preserved).use { merged ->
@@ -47,8 +48,9 @@ class ApkMergerTest {
                 val certificates = (1..2).map { attempt ->
                     val output = File(folder, "resigned-$attempt.apk")
                     ApkMerger.merge(input, output, base.packageName, version, resign = true)
-                    val verification = ApkVerifier.Builder(output)
-                        .setMinCheckedPlatformVersion(24).build().verify()
+                    val verification =
+                        ApkVerifier.Builder(output).setMinCheckedPlatformVersion(24).build()
+                            .verify()
                     assertTrue(verification.errors.toString(), verification.isVerified)
                     assertFalse(verification.isVerifiedUsingV1Scheme)
                     assertTrue(verification.isVerifiedUsingV2Scheme)

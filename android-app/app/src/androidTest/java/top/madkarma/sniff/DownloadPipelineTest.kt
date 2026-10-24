@@ -18,6 +18,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -27,6 +28,7 @@ import top.madkarma.sniff.data.SniffRepository
 import java.io.File
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.zip.ZipFile
 
 @RunWith(AndroidJUnit4::class)
@@ -87,15 +89,18 @@ class DownloadPipelineTest {
         File(context.filesDir, "last-test-result.txt").writeText(result.folder.path)
     }
 
-    /** Genuine signed standalone APK (this app), plus expansion and dex files; no split fallback. */
-    @Test
-    fun standaloneApkPreservesSignatureAndDownloadsAdditionalFiles() = runBlocking {
-        val original = File(context.applicationInfo.sourceDir).readBytes()
+    private val original get() = File(context.applicationInfo.sourceDir).readBytes()
+    private val installedVersion
+        get() = context.packageManager.getPackageInfo(context.packageName, 0).longVersionCode
+
+    /** API response describing this app as a standalone APK with expansion and dex files. */
+    private fun standaloneResponse(versionCode: Long): String {
         val data = JSONObject().put(
             "item", JSONObject().put("title", "Test fixture").put(
                 "details", JSONObject().put(
                     "app_details",
-                    JSONObject().put("package_name", context.packageName).put("version_code", 1)
+                    JSONObject().put("package_name", context.packageName)
+                        .put("version_code", versionCode)
                 )
             )
         ).put("main_apk_url", "https://fixture.invalid/base.apk").put("splits", JSONArray()).put(
@@ -104,22 +109,37 @@ class DownloadPipelineTest {
                     .put("download_url", "https://fixture.invalid/main.obb")
             )
         ).put("dex_metadata_url", "https://fixture.invalid/base.dm")
-        val response = JSONObject().put("success", true).put("data", data).toString()
-        val client = OkHttpClient.Builder().addInterceptor { chain ->
+        return JSONObject().put("success", true).put("data", data).toString()
+    }
+
+    /** Serves [response] for API calls and fixture bytes for downloads, counting the downloads. */
+    private fun fixtureClient(response: () -> String, downloads: AtomicInteger): OkHttpClient {
+        val apk = original
+        return OkHttpClient.Builder().addInterceptor { chain ->
             val bytes = when {
-                chain.request().url.host == "sniff.madkarma.top" -> response.toByteArray()
-                chain.request().url.encodedPath == "/base.apk" -> original
-                else -> "extra fixture data".toByteArray()
+                chain.request().url.host == "sniff.madkarma.top" -> response().toByteArray()
+                else -> {
+                    downloads.incrementAndGet()
+                    if (chain.request().url.encodedPath == "/base.apk") apk
+                    else "extra fixture data".toByteArray()
+                }
             }
             Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1).code(200)
                 .message("Fixture").body(bytes.toResponseBody()).build()
         }.build()
-        val result =
-            SniffRepository(context, client).download(
-                context.packageName, ReleaseChannel.STABLE, resign = true
-            ) {}
+    }
+
+    /** Genuine signed standalone APK (this app), plus expansion and dex files; no split fallback. */
+    @Test
+    fun standaloneApkPreservesSignatureAndDownloadsAdditionalFiles() = runBlocking {
+        val response = standaloneResponse(installedVersion)
+        val client = fixtureClient({ response }, AtomicInteger())
+        val result = SniffRepository(context, client).download(
+            context.packageName, ReleaseChannel.STABLE, resign = true
+        ) {}
         try {
             assertFalse(result.merged)
+            assertFalse(result.cached)
             assertEquals(3, result.fileCount)
             assertArrayEquals(
                 MessageDigest.getInstance("SHA-256").digest(original),
@@ -130,6 +150,55 @@ class DownloadPipelineTest {
             assertTrue(ApkVerifier.Builder(result.apk).build().verify().isVerified)
         } finally {
             result.folder.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun sameVersionIsServedFromCacheWithoutDownloading() = runBlocking {
+        val response = standaloneResponse(installedVersion)
+        val downloads = AtomicInteger()
+        val repository = SniffRepository(context, fixtureClient({ response }, downloads))
+        val first = repository.download(context.packageName, ReleaseChannel.STABLE) {}
+        try {
+            assertEquals(3, downloads.get())
+            val second = repository.download(context.packageName, ReleaseChannel.STABLE) {}
+            assertTrue(second.cached)
+            assertEquals(3, downloads.get())
+            assertEquals(first.apk, second.apk)
+            assertEquals(first.fileCount, second.fileCount)
+        } finally {
+            first.folder.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun failedUpdateKeepsTheCachedVersion() = runBlocking {
+        var response = standaloneResponse(installedVersion)
+        val downloads = AtomicInteger()
+        val repository = SniffRepository(context, fixtureClient({ response }, downloads))
+        val cached = repository.download(context.packageName, ReleaseChannel.STABLE) {}
+        try {
+            // A newer version code makes the downloaded APK fail its version check.
+            response = standaloneResponse(installedVersion + 1)
+            try {
+                repository.download(context.packageName, ReleaseChannel.STABLE) {}
+                fail("An APK that does not match the API version must be rejected")
+            } catch (expected: IllegalStateException) {
+                assertTrue(expected.message.orEmpty().contains("does not match"))
+            }
+            assertEquals(6, downloads.get())
+            val leftovers = cached.folder.parentFile!!.list()!!
+                .filter { it.startsWith("${context.packageName}-") }
+            assertEquals(emptyList<String>(), leftovers)
+            assertTrue(cached.apk.isFile)
+
+            response = standaloneResponse(installedVersion)
+            val reused = repository.download(context.packageName, ReleaseChannel.STABLE) {}
+            assertTrue(reused.cached)
+            assertEquals(6, downloads.get())
+            assertArrayEquals(original, reused.apk.readBytes())
+        } finally {
+            cached.folder.deleteRecursively()
         }
     }
 }

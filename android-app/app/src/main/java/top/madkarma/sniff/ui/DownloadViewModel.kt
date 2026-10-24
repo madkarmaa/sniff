@@ -41,13 +41,16 @@ class DownloadViewModel(
                     mutableState.update { it.copy(message = message) }
                 }
 
-                mutableState.value = DownloadUiState(
-                    result = result,
-                    message = "Ready · ${result.fileCount} files downloaded",
-                )
+                val summary = if (result.cached) {
+                    "already up to date, using cached files"
+                } else {
+                    "${result.fileCount} files downloaded"
+                }
+
+                mutableState.value = DownloadUiState(result = result, message = "Ready · $summary")
             } catch (_: CancellationException) {
                 mutableState.value =
-                    DownloadUiState(message = "Cancelled. Temporary files removed.")
+                    DownloadUiState(message = "Cancelled. Any cached version was kept.")
             } catch (error: Exception) {
                 mutableState.value = DownloadUiState(
                     error = true,
@@ -57,6 +60,18 @@ class DownloadViewModel(
                 mutableState.update { it.copy(busy = false) }
             }
         }
+    }
+
+    /** Returns false, and drops the result, when the system cleared its cached files. */
+    fun isCached(result: DownloadResult): Boolean {
+        if (result.apk.isFile) return true
+
+        mutableState.value = DownloadUiState(
+            error = true,
+            message = "The cached files were removed. Download the app again.",
+        )
+
+        return false
     }
 
     fun cancel() {
@@ -73,7 +88,7 @@ class DownloadViewModel(
                 mutableState.update { it.copy(message = "Saved successfully.") }
             } catch (_: CancellationException) {
                 mutableState.update {
-                    it.copy(message = "Save cancelled; the destination may contain a partial file.")
+                    it.copy(message = "Save cancelled.")
                 }
             } catch (error: Exception) {
                 mutableState.update {

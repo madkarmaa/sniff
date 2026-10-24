@@ -40,7 +40,9 @@ class InteractiveUiTest {
         assertTrue(result.apk.isFile)
         val fake = object : DownloadSource {
             override suspend fun download(
-                packageId: String, channel: ReleaseChannel, resign: Boolean,
+                packageId: String,
+                channel: ReleaseChannel,
+                resign: Boolean,
                 onProgress: (String) -> Unit
             ) = result
 

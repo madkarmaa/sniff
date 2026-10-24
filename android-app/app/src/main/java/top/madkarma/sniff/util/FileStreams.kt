@@ -9,6 +9,7 @@ import java.io.OutputStream
 
 private const val COPY_BUFFER_SIZE = 64 * 1024
 
+/** Blocking copy that checks for cancellation between chunks; call it from an IO dispatcher. */
 internal suspend fun InputStream.copyWithCancellation(
     output: OutputStream,
     onProgress: (Long) -> Unit = {},

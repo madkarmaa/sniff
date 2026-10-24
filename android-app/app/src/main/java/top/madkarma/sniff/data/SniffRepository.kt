@@ -13,8 +13,19 @@ import org.json.JSONObject
 import top.madkarma.sniff.apk.ApkMerger
 import top.madkarma.sniff.util.formatBytes
 import java.io.File
+import kotlin.io.path.createTempDirectory
+import kotlin.io.path.moveTo
 
 private val PACKAGE_ID_PATTERN = Regex("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+")
+private const val INVENTORY_FILE = "inventory.json"
+
+/** The inventory of a complete cached download; it is written last, so its presence marks completion. */
+private data class CachedDownload(
+    val versionCode: Long,
+    val resigned: Boolean,
+    val files: List<String>,
+    val output: String,
+)
 
 class SniffRepository(
     context: Context,
@@ -38,37 +49,117 @@ class SniffRepository(
         onProgress("Fetching package information…")
 
         val plan = api.fetchDownloadPlan(packageId, channel)
-        val folder = createTemporaryFolder(packageId)
+        val folder = File(root, packageId)
+        removeIncompleteFolders()
+
+        val cached = readCachedDownload(folder, plan)
+        if (cached != null) {
+            useCachedDownload(plan, channel, folder, cached, resign, onProgress)
+        } else {
+            downloadIntoCache(plan, channel, folder, resign, onProgress)
+        }
+    }
+
+    private suspend fun useCachedDownload(
+        plan: DownloadPlan,
+        channel: ReleaseChannel,
+        folder: File,
+        cached: CachedDownload,
+        resign: Boolean,
+        onProgress: (String) -> Unit,
+    ): DownloadResult {
+        var output = File(folder, cached.output)
+
+        if (cached.resigned != (plan.hasSplits && resign) || !output.isFile) {
+            // The cached downloads are intact, so only the output APK is rebuilt.
+            val merged = File(folder, "merged.tmp")
+            try {
+                prepareApk(plan, folder, resign, onProgress, merged)
+                output = merged.toPath().moveTo(apkFile(plan, folder).toPath(), overwrite = true)
+                    .toFile()
+            } finally {
+                merged.delete()
+            }
+            writeInventory(plan, channel, folder, output, resign)
+        }
+
+        return DownloadResult(
+            apk = output,
+            folder = folder,
+            fileCount = cached.files.size,
+            merged = plan.hasSplits,
+            title = plan.title,
+            cached = true,
+        )
+    }
+
+    private suspend fun downloadIntoCache(
+        plan: DownloadPlan,
+        channel: ReleaseChannel,
+        folder: File,
+        resign: Boolean,
+        onProgress: (String) -> Unit,
+    ): DownloadResult {
+        // The new version is staged separately so a failed update keeps the cached one.
+        val staging = createStagingFolder(plan.packageId)
 
         try {
-            downloadFiles(plan, folder, onProgress)
+            downloadFiles(plan, staging, onProgress)
 
-            val output = prepareApk(plan, folder, resign, onProgress)
+            val output = prepareApk(plan, staging, resign, onProgress)
 
             currentCoroutineContext().ensureActive()
 
-            writeInventory(plan, channel, folder, output, resign)
+            writeInventory(plan, channel, staging, output, resign)
 
-            DownloadResult(
-                apk = output,
+            folder.deleteRecursively()
+            check(staging.renameTo(folder)) { "Could not update the cached download" }
+
+            return DownloadResult(
+                apk = File(folder, output.name),
                 folder = folder,
                 fileCount = plan.files.size,
                 merged = plan.hasSplits,
                 title = plan.title,
             )
         } catch (error: Throwable) {
-            folder.deleteRecursively()
+            staging.deleteRecursively()
             throw error
         }
     }
 
-    private fun createTemporaryFolder(packageId: String): File {
-        root.mkdirs()
-        return File.createTempFile("$packageId-", "", root).apply {
-            delete()
-            check(mkdir())
-        }
+    private fun readCachedDownload(folder: File, plan: DownloadPlan): CachedDownload? {
+        val inventory = File(folder, INVENTORY_FILE)
+        if (!inventory.isFile) return null
+
+        val cached = runCatching {
+            val json = JSONObject(inventory.readText())
+            val files = json.getJSONArray("files")
+            CachedDownload(
+                versionCode = json.getLong("version_code"),
+                resigned = json.getBoolean("resigned"),
+                files = List(files.length()) { files.getString(it) },
+                output = json.getString("output"),
+            )
+        }.getOrNull() ?: return null
+
+        val complete = cached.files.all { File(folder, it).isFile }
+        return cached.takeIf { it.versionCode == plan.versionCode && complete }
     }
+
+    /** Staging folders and folders from older app versions are never valid package IDs. */
+    private fun removeIncompleteFolders() {
+        root.listFiles { file -> !PACKAGE_ID_PATTERN.matches(file.name) }
+            ?.forEach { it.deleteRecursively() }
+    }
+
+    private fun createStagingFolder(packageId: String): File {
+        root.mkdirs()
+        return createTempDirectory(root.toPath(), "$packageId-").toFile()
+    }
+
+    private fun apkFile(plan: DownloadPlan, folder: File): File =
+        File(folder, "${plan.packageId}.apk")
 
     private suspend fun downloadFiles(
         plan: DownloadPlan, folder: File, onProgress: (String) -> Unit
@@ -93,10 +184,9 @@ class SniffRepository(
         folder: File,
         resign: Boolean,
         onProgress: (String) -> Unit,
+        output: File = apkFile(plan, folder),
     ): File {
         currentCoroutineContext().ensureActive()
-
-        val output = File(folder, "${plan.packageId}.apk")
 
         if (plan.hasSplits) {
             val action = if (resign) " and signing…" else "…"
@@ -131,6 +221,6 @@ class SniffRepository(
                 .put("files", JSONArray(plan.files.map { it.relativePath }))
                 .put("output", output.name)
 
-        File(folder, "inventory.json").writeText(inventory.toString(2))
+        File(folder, INVENTORY_FILE).writeText(inventory.toString(2))
     }
 }

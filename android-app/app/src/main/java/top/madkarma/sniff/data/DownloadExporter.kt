@@ -2,6 +2,7 @@ package top.madkarma.sniff.data
 
 import android.content.ContentResolver
 import android.net.Uri
+import android.provider.DocumentsContract
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
@@ -18,14 +19,20 @@ class DownloadExporter(
 ) {
     suspend fun save(uri: Uri, result: DownloadResult, format: ExportFormat): Unit =
         withContext(io) {
-            check(result.apk.isFile) { "Temporary APK was removed. Download it again." }
-            checkNotNull(resolver.openOutputStream(uri)).use { output ->
-                when (format) {
-                    ExportFormat.APK -> result.apk.inputStream()
-                        .use { it.copyWithCancellation(output) }
+            try {
+                check(result.apk.isFile) { "The cached APK was removed. Download it again." }
+                checkNotNull(resolver.openOutputStream(uri)).use { output ->
+                    when (format) {
+                        ExportFormat.APK -> result.apk.inputStream()
+                            .use { it.copyWithCancellation(output) }
 
-                    ExportFormat.ZIP -> writeBundle(result, output)
+                        ExportFormat.ZIP -> writeBundle(result, output)
+                    }
                 }
+            } catch (error: Throwable) {
+                // The document picker already created the destination; do not leave it empty or partial.
+                runCatching { DocumentsContract.deleteDocument(resolver, uri) }
+                throw error
             }
         }
 

@@ -8,6 +8,7 @@ data class DownloadResult(
     val fileCount: Int,
     val merged: Boolean,
     val title: String,
+    val cached: Boolean = false,
 )
 
 interface DownloadSource {

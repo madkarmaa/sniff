@@ -24,8 +24,8 @@ internal class SniffApi(private val client: OkHttpClient) {
             val json = runCatching { JSONObject(body) }.getOrNull()
 
             check(response.isSuccessful && json?.optBoolean("success") == true) {
-                val detail = json?.optString("error")?.takeIf { it.isNotBlank() && it != "null" }
-                detail ?: "API request failed (HTTP ${response.code}). Try again later."
+                json?.optText("error")
+                    ?: "API request failed (HTTP ${response.code}). Try again later."
             }
 
             json.getJSONObject("data")
@@ -49,13 +49,13 @@ internal class SniffApi(private val client: OkHttpClient) {
         val splitCount = addSplits(data, files)
         addAdditionalFiles(data, files)
 
-        data.optString("dex_metadata_url").takeIf { it.isNotBlank() && it != "null" }
+        data.optText("dex_metadata_url")
             ?.let { files += RemoteFile("base.dm", it, "metadata/base.dm") }
 
         return DownloadPlan(
             packageId = packageId,
             versionCode = versionCode,
-            title = item.optString("title", packageId),
+            title = item.optText("title") ?: packageId,
             files = files.toList(),
             splitCount = splitCount,
         )
@@ -66,7 +66,7 @@ internal class SniffApi(private val client: OkHttpClient) {
 
         for (index in 0 until splits.length()) {
             val split = splits.getJSONObject(index)
-            val name = safeFileName(split.optString("name", "split-$index"))
+            val name = safeFileName(split.optText("name") ?: "split-$index")
             val numberedName = index.toString().padStart(4, '0')
 
             files += RemoteFile(
@@ -86,18 +86,21 @@ internal class SniffApi(private val client: OkHttpClient) {
         for (index in 0 until additional.length()) {
             val file = additional.getJSONObject(index)
 
-            val name = safeFileName(file.optString("filename", "additional-$index"))
+            val name = safeFileName(file.optText("filename") ?: "additional-$index")
             check(names.add(name)) { "API returned duplicate additional filenames" }
 
             files += RemoteFile(name, requiredUrl(file, "download_url"), "additional/$name")
         }
     }
 
-    private fun requiredUrl(json: JSONObject, key: String): String = json.optString(key).also {
-        check(it.isNotBlank() && it != "null") { "API omitted a required download URL ($key)" }
-    }
+    private fun requiredUrl(json: JSONObject, key: String): String =
+        checkNotNull(json.optText(key)) { "API omitted a required download URL ($key)" }
 
     private fun safeFileName(value: String): String =
         value.replace(UNSAFE_FILENAME_CHARACTERS, "_").take(MAX_FILENAME_LENGTH)
             .takeIf { it.isNotBlank() && it != "." && it != ".." } ?: "file"
 }
+
+/** Returns the value of [key], or null when it is missing, JSON null, or blank. */
+private fun JSONObject.optText(key: String): String? =
+    if (isNull(key)) null else optString(key).takeIf { it.isNotBlank() }

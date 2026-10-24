@@ -32,8 +32,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
@@ -101,14 +101,17 @@ internal fun DownloadScreen(model: DownloadViewModel) {
                 result = result,
                 enabled = !state.busy,
                 onExport = { format ->
-                    pendingExport = result
-                    val fileName = format.suggestedFileName(result)
-                    when (format) {
-                        ExportFormat.APK -> saveApk.launch(fileName)
-                        ExportFormat.ZIP -> saveZip.launch(fileName)
+                    if (model.isCached(result)) {
+                        pendingExport = result
+                        val fileName = format.suggestedFileName(result)
+
+                        when (format) {
+                            ExportFormat.APK -> saveApk.launch(fileName)
+                            ExportFormat.ZIP -> saveZip.launch(fileName)
+                        }
                     }
                 },
-                onShare = { shareApk(context, result, shareTitle) },
+                onShare = { if (model.isCached(result)) shareApk(context, result, shareTitle) },
             )
         }
     }
@@ -146,12 +149,14 @@ private fun DownloadForm(
         }
     }
     Row(
-        modifier = Modifier.fillMaxWidth().toggleable(
-            value = resign,
-            enabled = enabled,
-            role = Role.Checkbox,
-            onValueChange = onResignChange,
-        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .toggleable(
+                value = resign,
+                enabled = enabled,
+                role = Role.Checkbox,
+                onValueChange = onResignChange,
+            ),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
