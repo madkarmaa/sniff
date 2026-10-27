@@ -141,6 +141,7 @@ class DownloadPipelineTest {
             assertFalse(result.merged)
             assertFalse(result.cached)
             assertEquals(3, result.fileCount)
+            assertEquals("${context.packageName}_$installedVersion.apk", result.apk.name)
             assertArrayEquals(
                 MessageDigest.getInstance("SHA-256").digest(original),
                 MessageDigest.getInstance("SHA-256").digest(result.apk.readBytes())
@@ -166,6 +167,33 @@ class DownloadPipelineTest {
             assertEquals(3, downloads.get())
             assertEquals(first.apk, second.apk)
             assertEquals(first.fileCount, second.fileCount)
+        } finally {
+            first.folder.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun cacheWithUnversionedApkNameIsRenamedWithoutDownloading() = runBlocking {
+        val response = standaloneResponse(installedVersion)
+        val downloads = AtomicInteger()
+        val repository = SniffRepository(context, fixtureClient({ response }, downloads))
+        val first = repository.download(context.packageName, ReleaseChannel.STABLE) {}
+        try {
+            // Recreate the layout written by app versions that named the APK by package only.
+            val legacy = File(first.folder, "${context.packageName}.apk")
+            assertTrue(first.apk.renameTo(legacy))
+            val inventory = File(first.folder, "inventory.json")
+            inventory.writeText(
+                JSONObject(inventory.readText()).put("output", legacy.name).toString()
+            )
+
+            val second = repository.download(context.packageName, ReleaseChannel.STABLE) {}
+            assertTrue(second.cached)
+            assertEquals(3, downloads.get())
+            assertEquals(first.apk, second.apk)
+            assertFalse(legacy.exists())
+            assertArrayEquals(original, second.apk.readBytes())
+            assertEquals(second.apk.name, JSONObject(inventory.readText()).getString("output"))
         } finally {
             first.folder.deleteRecursively()
         }

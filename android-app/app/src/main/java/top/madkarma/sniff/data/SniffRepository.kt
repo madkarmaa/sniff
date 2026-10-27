@@ -68,20 +68,26 @@ class SniffRepository(
         resign: Boolean,
         onProgress: (String) -> Unit,
     ): DownloadResult {
-        var output = File(folder, cached.output)
+        val output = apkFile(plan, folder)
+        val previous = File(folder, cached.output)
 
-        if (cached.resigned != (plan.hasSplits && resign) || !output.isFile) {
+        // Older app versions named the APK without its version code.
+        val renamed = previous != output
+        if (renamed && !previous.renameTo(output)) previous.delete()
+
+        val rebuilt = cached.resigned != (plan.hasSplits && resign) || !output.isFile
+        if (rebuilt) {
             // The cached downloads are intact, so only the output APK is rebuilt.
             val merged = File(folder, "merged.tmp")
             try {
                 prepareApk(plan, folder, resign, onProgress, merged)
-                output = merged.toPath().moveTo(apkFile(plan, folder).toPath(), overwrite = true)
-                    .toFile()
+                merged.toPath().moveTo(output.toPath(), overwrite = true)
             } finally {
                 merged.delete()
             }
-            writeInventory(plan, channel, folder, output, resign)
         }
+
+        if (renamed || rebuilt) writeInventory(plan, channel, folder, output, resign)
 
         return DownloadResult(
             apk = output,
@@ -159,7 +165,7 @@ class SniffRepository(
     }
 
     private fun apkFile(plan: DownloadPlan, folder: File): File =
-        File(folder, "${plan.packageId}.apk")
+        File(folder, "${plan.packageId}_${plan.versionCode}.apk")
 
     private suspend fun downloadFiles(
         plan: DownloadPlan, folder: File, onProgress: (String) -> Unit
