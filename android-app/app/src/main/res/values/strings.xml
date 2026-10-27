@@ -1,7 +1,7 @@
 <resources>
     <string name="app_name">Sniff</string>
     <string name="introduction">Download an app from Google Play and combine its splits into one APK.</string>
-    <string name="package_id">Package ID</string>
+    <string name="package_id">Package ID or Google Play link</string>
     <string name="package_example" translatable="false">com.google.android.calculator</string>
     <string name="stable">Stable</string>
     <string name="beta">Beta</string>

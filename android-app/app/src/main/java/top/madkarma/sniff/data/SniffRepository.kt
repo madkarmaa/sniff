@@ -43,7 +43,7 @@ class SniffRepository(
         onProgress: (String) -> Unit,
     ): DownloadResult = withContext(io) {
         require(PACKAGE_ID_PATTERN.matches(packageId)) {
-            "Enter a valid package ID, such as com.google.android.calculator"
+            "Enter a valid package ID or Google Play link, such as com.google.android.calculator"
         }
 
         onProgress("Fetching package information…")

@@ -15,6 +15,7 @@ import top.madkarma.sniff.data.DownloadResult
 import top.madkarma.sniff.data.DownloadSource
 import top.madkarma.sniff.data.ExportFormat
 import top.madkarma.sniff.data.ReleaseChannel
+import top.madkarma.sniff.data.packageIdFromInput
 
 data class DownloadUiState(
     val busy: Boolean = false,
@@ -31,13 +32,15 @@ class DownloadViewModel(
     val state: StateFlow<DownloadUiState> = mutableState.asStateFlow()
     private var task: Job? = null
 
-    fun download(packageId: String, channel: ReleaseChannel, resign: Boolean = false) {
+    /** Downloads the app named by [input], either a package ID or a Google Play link. */
+    fun download(input: String, channel: ReleaseChannel, resign: Boolean = false) {
         if (state.value.busy) return
         mutableState.value = DownloadUiState(busy = true)
 
         task = viewModelScope.launch {
             try {
-                val result = repository.download(packageId.trim(), channel, resign) { message ->
+                val packageId = packageIdFromInput(input)
+                val result = repository.download(packageId, channel, resign) { message ->
                     mutableState.update { it.copy(message = message) }
                 }
 
