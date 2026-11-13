@@ -65,14 +65,14 @@ pub struct DownloadResponse<T> {
     #[serde(flatten)]
     pub download: DownloadInfo,
     /// One entry per download target, in a fixed order. The download fields
-    /// above merge the targets that succeeded: when some failed, the result
+    /// above merge the targets that succeeded. When some failed, the result
     /// can lack the splits those ABIs need, so check `success` before relying
-    /// on it. (Only a lookup where every target failed is an error response.)
+    /// on it. Only a lookup where every target failed is an error response.
     pub targets: Vec<TargetReport>,
 }
 
-/// Error envelope. Matches the runtime error shape exactly: `data` is
-/// always `null` here, only `error` carries the message.
+/// Error envelope, matching the runtime error shape. `data` is always `null`
+/// and `error` carries the message.
 #[derive(Serialize, Deserialize, ToSchema)]
 #[schema(example = json!({
     "success": false,

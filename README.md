@@ -10,7 +10,7 @@ code, changelog, and download size.
 
 - One endpoint returns app details and download URLs for the latest version.
 - Beta and alpha channels work for any app whose testing program the channel's account has joined.
-- Splits are merged across arm64-v8a, armeabi-v7a, x86, and x86_64 devices, so one call lists every APK split the app ships.
+- The Worker merges the splits that arm64-v8a, armeabi-v7a, x86, and x86_64 devices receive, so one call lists every APK split the app ships.
 - Every file comes with its size and hashes, and a `targets` list shows which ABIs made it into the merge.
 - Successful lookups are cached at the edge for 120 seconds, and CORS is open so browser apps can call the API.
 - Worker instances share Google sessions and their registered devices through Workers KV, so the accounts do not collect a new device per instance.
@@ -18,8 +18,8 @@ code, changelog, and download size.
 
 ## API endpoints
 
-Interactive API reference is served at `/v3/docs`; the OpenAPI document is
-available at `/v3/openapi.json`.
+The interactive API reference is at `/v3/docs` and the OpenAPI document at
+`/v3/openapi.json`.
 
 ### Get latest app details and download info
 
@@ -50,7 +50,7 @@ hashes next to a URL describe the file behind that URL.
 
 - `package_name`: The package identifier of the app (e.g., `com.discord`): dot-separated
   segments of letters, digits and underscores, each starting with a letter, at most 255
-  characters. Anything else is rejected with 400 before Google is contacted.
+  characters. The Worker answers anything else with 400 before it contacts Google.
 - `channel`: Release channel (`stable`, `beta`, or `alpha`, case-insensitive)
 
 **Possible channels:**
@@ -59,7 +59,7 @@ hashes next to a URL describe the file behind that URL.
 - `beta` - Beta program release (when the `BETA_*` account has joined the app's testing program)
 - `alpha` - Alpha program release (when the `ALPHA_*` account has joined the app's testing program)
 
-**Response Format:**
+**Response format:**
 
 Successful response (`GET /v3/download/com.discord/stable`, trimmed):
 
@@ -225,13 +225,20 @@ Worker instance keeps its own sessions.
 ## Android app
 
 `android-app/` is a companion app for the API. Enter a package ID or a Google Play
-link, choose a channel, and the app downloads every file through the API, merges the
-splits into a single APK (optionally re-signed), and lets you save or share the APK or
-a ZIP of all files.
+link (or share one from Google Play) and choose a channel. The app downloads every
+file the API lists and checks it against the reported size and hash. A foreground
+service keeps a long download going while the app is in the background. The app then
+installs the original split APKs, which can update a copy installed from Google Play,
+or merges the splits into a single APK (optionally re-signed) to save or share, along
+with a ZIP of all files. Downloads stay cached until the app has a newer version.
 
 - Download: [GitHub Releases](https://github.com/madkarmaa/sniff/releases), tags `android-v*`
 - Requires Android 8.0 (API 26) or newer
 - Build: `./gradlew :app:assembleDebug` inside `android-app/` (needs JDK 17+ and the Android SDK)
+- Device tests: `./gradlew :app:connectedDebugAndroidTest` with a device attached. The
+  tests use canned API responses. `CapturedApiPipelineTest` replays a real response
+  saved in the app's files directory (`-e capturedResponse <file name>`) and downloads
+  the files from Google Play.
 
 ## Build from source
 
@@ -261,7 +268,7 @@ It prints the AAS token. Repeat for every account you plan to use.
 
 ### 2. Local dev
 
-Create `.dev.vars` (gitignored, picked up automatically by `wrangler dev`):
+Create `.dev.vars`, which is gitignored and which `wrangler dev` reads:
 
 ```
 DEVICE_NAME="px_9a"
@@ -273,14 +280,18 @@ ALPHA_EMAIL="..."
 ALPHA_AAS_TOKEN="..."
 ```
 
-`STABLE_*` is required; beta/alpha pairs are optional and only needed for those
-channels. Then:
+`STABLE_*` is required; the beta and alpha pairs are only needed for those channels.
+Then:
 
 ```bash
 bun install
 bun run dev
 curl -fsSL -A "Mozilla/5.0" http://localhost:8787/v3/download/com.discord/stable
 ```
+
+`wrangler dev` simulates the KV namespace and the rate limiter and keeps KV data in
+`.wrangler/state`. The first lookups check devices in on the real accounts; later
+runs reuse them from that state.
 
 ### 3. Checks
 
@@ -292,9 +303,10 @@ cargo clippy -p sniff --target wasm32-unknown-unknown --locked -- -D warnings
 cargo test --workspace --locked
 ```
 
-CI runs these, plus Android lint and a debug build, on every push and pull request.
-Pushes to `v*` branches run the format, Worker clippy, and test checks before
-deploying. `Cargo.lock` is committed, so builds use the locked dependency versions.
+CI runs these, plus Android lint and the app and test APK builds, on every push and
+pull request. Pushes to `v*` branches run the format, Worker clippy, and test checks,
+then deploy that API version. The first deploy of a version creates its `SESSIONS` KV
+namespace. `Cargo.lock` is committed, so builds use the locked dependency versions.
 
 ## Environment variables
 

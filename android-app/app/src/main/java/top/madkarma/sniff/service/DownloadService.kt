@@ -29,7 +29,7 @@ private const val NOTIFICATION_ID = 1
 
 /**
  * Starts [DownloadService]. The system refuses this while the app is in the background, and the
- * download then simply runs without the service.
+ * download then runs without the service.
  */
 internal fun startDownloadService(context: Context) {
     try {

@@ -6,8 +6,8 @@
 //! [embedded setup page](https://accounts.google.com/EmbeddedSetup/identifier?flowName=EmbeddedSetupAndroid)
 //! and opening the browser debugging console, logging in, and looking for the `oauth_token` cookie
 //! being set on your browser.  It will be present in the last requests being made and start with
-//! `oauth2_4/`.  Copy this value.  It can only be used once, in order to obtain the `aas_token`,
-//! which can be used subsequently.  To obtain this token:
+//! `oauth2_4/`.  Copy this value.  It works only once, to obtain the `aas_token`, which later
+//! logins use.  To obtain this token:
 //!
 //! ```rust
 //! use gpapi::Gpapi;

@@ -1,6 +1,6 @@
-//! The worker's error type: a kind, which decides the HTTP status, plus a
-//! concise message that is safe to show to clients. Detailed diagnostics are
-//! logged where the failure happens and never travel in the message.
+//! The worker's error type. Its kind decides the HTTP status, and its short
+//! message is safe to show to clients. The code where a failure happens logs
+//! the details, which never travel in the message.
 //!
 //! Nothing here touches the Workers runtime, so it is unit-testable natively.
 
@@ -168,8 +168,8 @@ impl ApiError {
 
     /// Classify an error from the Google Play client.
     ///
-    /// The message is deliberately generic: `err`'s `Display` can carry
-    /// response bodies and URLs, which belong in logs only.
+    /// The message stays generic because `err`'s `Display` can carry response
+    /// bodies and URLs, which belong in logs only.
     #[must_use]
     pub fn from_upstream(stage: Stage, channel: Channel, err: &(dyn StdError + 'static)) -> Self {
         if let Some(status) = http_status(err) {
@@ -194,7 +194,7 @@ impl ApiError {
                 ErrorKind::NotDownloadable,
                 "This app cannot be downloaded: it may be paid or not available to the accounts and devices used by this service",
             ),
-            // Only reachable through a bug: every call is preceded by a login.
+            // Only a bug reaches this, since a login precedes every call.
             (Some(GpapiErrorKind::LoginRequired), _) => Self::internal(),
             (Some(GpapiErrorKind::Authentication), Stage::Login) => Self::new(
                 ErrorKind::Upstream,
