@@ -9,9 +9,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <!-- Android 13+: lets the ongoing download notification show; downloads work without it. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <!-- allowBackup=false covers API 26-30; dataExtractionRules (API 31+) is kept for newer systems. -->
+    <!-- allowBackup/fullBackupContent=false cover API 26-30; dataExtractionRules covers API 31+. -->
     <application
         android:allowBackup="false"
+        android:fullBackupContent="false"
         android:label="@string/app_name"
         android:theme="@style/Theme.Sniff"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -34,8 +35,8 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/plain" />
             </intent-filter>
-            <!-- No autoVerify: Sniff does not own play.google.com. -->
-            <intent-filter>
+            <!-- Not an App Link: Sniff does not own play.google.com, so it cannot be verified. -->
+            <intent-filter android:autoVerify="false">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
