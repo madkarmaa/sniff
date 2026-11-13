@@ -1,66 +1,31 @@
 package top.madkarma.sniff.ui
 
-import android.Manifest
-import android.content.ActivityNotFoundException
-import android.content.Context
-import android.content.Intent
-import android.content.pm.PackageManager
-import android.net.Uri
-import android.os.Build
-import android.provider.Settings
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.toggleable
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
-import androidx.core.content.FileProvider
-import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import top.madkarma.sniff.R
-import top.madkarma.sniff.data.DownloadResult
-import top.madkarma.sniff.data.ExportFormat
 import top.madkarma.sniff.data.ReleaseChannel
-import top.madkarma.sniff.data.UiText
 import top.madkarma.sniff.service.ActiveWork
 import top.madkarma.sniff.service.startDownloadService
-import top.madkarma.sniff.util.formatBytes
 
 /** Text from outside the app for the package field; each instance is a separate event. */
 internal class IncomingInput(val text: String)
@@ -73,8 +38,6 @@ internal fun DownloadScreen(model: DownloadViewModel, incoming: IncomingInput? =
     LaunchedEffect(incoming) { if (incoming != null) packageId = incoming.text }
     var channel by rememberSaveable { mutableStateOf(ReleaseChannel.STABLE) }
     var resign by rememberSaveable { mutableStateOf(false) }
-    var pendingExport by remember { mutableStateOf<DownloadResult?>(null) }
-    var pendingInstall by remember { mutableStateOf<DownloadResult?>(null) }
     val context = LocalContext.current
     val focus = LocalFocusManager.current
     val shareTitle = stringResource(R.string.share_apk)
@@ -84,54 +47,10 @@ internal fun DownloadScreen(model: DownloadViewModel, incoming: IncomingInput? =
     val working by ActiveWork.active.collectAsStateWithLifecycle()
     LaunchedEffect(working) { if (working) startDownloadService(context) }
 
-    // Asked once, on the first download. The download does not wait for the answer: the service
-    // runs without the permission, only its notification stays hidden.
-    var askedForNotifications by rememberSaveable { mutableStateOf(false) }
-    val askNotifications = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) {}
-
-    fun export(uri: Uri?, format: ExportFormat) {
-        val result = pendingExport ?: state.result
-        if (uri != null && result != null) model.export(uri, result, format)
-    }
-
-    // Returning from the settings screen resumes the install if the user allowed it there.
-    val allowInstalls = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) {
-        val result = pendingInstall ?: state.result
-        if (result != null && context.packageManager.canRequestPackageInstalls()) {
-            model.install(result)
-        }
-    }
-
-    fun install(result: DownloadResult) {
-        if (!model.isCached(result)) return
-
-        if (context.packageManager.canRequestPackageInstalls()) {
-            model.install(result)
-            return
-        }
-
-        pendingInstall = result
-        model.showInstallPermissionNeeded()
-        val settings = Intent(
-            Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, "package:${context.packageName}".toUri()
-        )
-        try {
-            allowInstalls.launch(settings)
-        } catch (_: ActivityNotFoundException) {
-            // The message above still tells the user where to look.
-        }
-    }
-
-    val saveApk = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument(ExportFormat.APK.mimeType)
-    ) { export(it, ExportFormat.APK) }
-    val saveZip = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument(ExportFormat.ZIP.mimeType)
-    ) { export(it, ExportFormat.ZIP) }
+    val askNotifications = rememberNotificationRequest()
+    val currentResult = { state.result }
+    val install = rememberInstallAction(model, currentResult)
+    val export = rememberExportAction(model, currentResult)
 
     Column(
         modifier = Modifier
@@ -154,15 +73,7 @@ internal fun DownloadScreen(model: DownloadViewModel, incoming: IncomingInput? =
             onResignChange = { resign = it },
             onDownload = {
                 focus.clearFocus()
-                // Notification permission exists from Android 13 (API 33).
-                if (!askedForNotifications && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                    ContextCompat.checkSelfPermission(
-                        context, Manifest.permission.POST_NOTIFICATIONS
-                    ) != PackageManager.PERMISSION_GRANTED
-                ) {
-                    askedForNotifications = true
-                    askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
-                }
+                askNotifications()
                 model.download(packageId, channel, resign)
             },
         )
@@ -172,184 +83,9 @@ internal fun DownloadScreen(model: DownloadViewModel, incoming: IncomingInput? =
                 result = result,
                 enabled = !state.busy,
                 onInstall = { install(result) },
-                onExport = { format ->
-                    if (model.isCached(result)) {
-                        pendingExport = result
-                        val fileName = format.suggestedFileName(result)
-
-                        when (format) {
-                            ExportFormat.APK -> saveApk.launch(fileName)
-                            ExportFormat.ZIP -> saveZip.launch(fileName)
-                        }
-                    }
-                },
+                onExport = { format -> export(result, format) },
                 onShare = { if (model.isCached(result)) shareApk(context, result, shareTitle) },
             )
         }
     }
-}
-
-@Composable
-private fun DownloadForm(
-    packageId: String,
-    channel: ReleaseChannel,
-    resign: Boolean,
-    enabled: Boolean,
-    onPackageIdChange: (String) -> Unit,
-    onChannelChange: (ReleaseChannel) -> Unit,
-    onResignChange: (Boolean) -> Unit,
-    onDownload: () -> Unit,
-) {
-    OutlinedTextField(
-        value = packageId,
-        onValueChange = onPackageIdChange,
-        enabled = enabled,
-        label = { Text(stringResource(R.string.package_id)) },
-        placeholder = { Text(stringResource(R.string.package_example)) },
-        singleLine = true,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
-        trailingIcon = if (packageId.isEmpty()) null else {
-            {
-                IconButton(onClick = { onPackageIdChange("") }, enabled = enabled) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_clear),
-                        contentDescription = stringResource(R.string.clear),
-                    )
-                }
-            }
-        },
-        modifier = Modifier.fillMaxWidth(),
-    )
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        ReleaseChannel.entries.forEach { choice ->
-            FilterChip(
-                selected = channel == choice,
-                enabled = enabled,
-                onClick = { onChannelChange(choice) },
-                label = { Text(stringResource(choice.labelResource())) },
-            )
-        }
-    }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .toggleable(
-                value = resign,
-                enabled = enabled,
-                role = Role.Checkbox,
-                onValueChange = onResignChange,
-            ),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Checkbox(checked = resign, onCheckedChange = null, enabled = enabled)
-        Column(Modifier.weight(1f)) {
-            Text(stringResource(R.string.resign))
-            Text(
-                text = stringResource(R.string.resign_description),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
-    Button(
-        onClick = onDownload,
-        enabled = enabled && packageId.isNotBlank(),
-        modifier = Modifier.fillMaxWidth(),
-    ) { Text(stringResource(R.string.download_apk)) }
-}
-
-@Composable
-private fun DownloadStatus(state: DownloadUiState, onCancel: () -> Unit) {
-    if (state.busy) {
-        val progress = state.progress
-        if (progress != null) {
-            LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
-        } else {
-            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-        }
-        OutlinedButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) }
-    }
-    state.message?.let { message ->
-        Text(
-            text = message.resolve(),
-            color = if (state.error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-            style = MaterialTheme.typography.bodyLarge,
-        )
-    }
-}
-
-@Composable
-private fun DownloadResultCard(
-    result: DownloadResult,
-    enabled: Boolean,
-    onInstall: () -> Unit,
-    onExport: (ExportFormat) -> Unit,
-    onShare: () -> Unit,
-) {
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(result.title, style = MaterialTheme.typography.titleLarge)
-            Text("${result.apk.name} · ${formatBytes(result.apk.length())}")
-            // Not an error: the download worked, but some device variants are missing from it.
-            // Only ABIs this device can run matter here; the others would go unused anyway.
-            val missingAbis = result.failedAbis.filter { it in Build.SUPPORTED_ABIS }
-            if (missingAbis.isNotEmpty()) {
-                Text(
-                    text = stringResource(
-                        R.string.note_partial_targets, missingAbis.joinToString(", ")
-                    ),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Button(
-                onClick = onInstall,
-                enabled = enabled,
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text(stringResource(R.string.install_apk)) }
-            // Only a merged APK differs from the installed files.
-            if (result.merged) {
-                Text(
-                    text = stringResource(R.string.install_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            OutlinedButton(
-                onClick = { onExport(ExportFormat.APK) },
-                enabled = enabled,
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text(stringResource(R.string.save_apk)) }
-            OutlinedButton(
-                onClick = onShare,
-                enabled = enabled,
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text(stringResource(R.string.share_apk)) }
-            OutlinedButton(
-                onClick = { onExport(ExportFormat.ZIP) },
-                enabled = enabled,
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text(stringResource(R.string.save_zip)) }
-        }
-    }
-}
-
-@Composable
-private fun UiText.resolve(): String = when (this) {
-    is UiText.Resource -> stringResource(id, *args.toTypedArray())
-    is UiText.Raw -> value
-}
-
-private fun ReleaseChannel.labelResource(): Int = when (this) {
-    ReleaseChannel.STABLE -> R.string.stable
-    ReleaseChannel.BETA -> R.string.beta
-    ReleaseChannel.ALPHA -> R.string.alpha
-}
-
-private fun shareApk(context: Context, result: DownloadResult, title: String) {
-    val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", result.apk)
-    val intent = Intent(Intent.ACTION_SEND).setType(ExportFormat.APK.mimeType)
-        .putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-    context.startActivity(Intent.createChooser(intent, title))
 }
