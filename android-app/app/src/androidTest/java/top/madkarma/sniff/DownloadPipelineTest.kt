@@ -24,10 +24,13 @@ import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import top.madkarma.sniff.data.API_ROOT
+import top.madkarma.sniff.data.AppException
 import top.madkarma.sniff.data.ReleaseChannel
 import top.madkarma.sniff.data.SniffRepository
+import top.madkarma.sniff.data.UiText
 import java.io.File
 import java.security.MessageDigest
+import java.util.Base64
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.zip.ZipFile
@@ -59,7 +62,7 @@ class DownloadPipelineTest {
             }.build()
         val result = SniffRepository(context, client).download(
             packageId, ReleaseChannel.STABLE
-        ) { println(it) }
+        ) { message, fraction -> println("$message $fraction") }
         assertTrue(result.merged)
         assertTrue(result.apk.length() > 0)
         val splits = data.getJSONArray("splits").length()
@@ -155,6 +158,47 @@ class DownloadPipelineTest {
         } finally {
             result.folder.deleteRecursively()
         }
+    }
+
+    /** API v3 adds sizes, hashes and per-ABI targets; failed targets are reported, not fatal. */
+    @Test
+    fun v3SizeAndHashAreCheckedAndFailedTargetsReported() = runBlocking {
+        val apk = original
+        val digest = Base64.getUrlEncoder().withoutPadding()
+            .encodeToString(MessageDigest.getInstance("SHA-256").digest(apk))
+        val targets = JSONArray().put(
+            JSONObject().put("abi", "arm64-v8a").put("success", true).put("error", JSONObject.NULL)
+        ).put(JSONObject().put("abi", "x86").put("success", false).put("error", "unavailable"))
+        val response = JSONObject(standaloneResponse(installedVersion)).apply {
+            getJSONObject("data").put("main_apk_size", apk.size).put("main_apk_sha256", digest)
+                .put("targets", targets)
+        }.toString()
+        val result = SniffRepository(context, fixtureClient({ response }, AtomicInteger())).download(
+            context.packageName, ReleaseChannel.STABLE
+        ) { _, _ -> }
+        try {
+            assertEquals(listOf("x86"), result.failedAbis)
+        } finally {
+            result.folder.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun wrongReportedHashRejectsTheDownloadAndKeepsNoFiles() = runBlocking {
+        val response = JSONObject(standaloneResponse(installedVersion)).apply {
+            getJSONObject("data").put("main_apk_sha256", "00".repeat(32))
+        }.toString()
+        try {
+            SniffRepository(context, fixtureClient({ response }, AtomicInteger())).download(
+                context.packageName, ReleaseChannel.STABLE
+            ) { _, _ -> }
+            fail("A file that does not match its reported hash must be rejected")
+        } catch (expected: AppException) {
+            assertEquals(R.string.error_file_checksum, (expected.text as UiText.Resource).id)
+        }
+        val leftovers = File(context.cacheDir, "downloads").list().orEmpty()
+            .filter { it.startsWith("${context.packageName}-") }
+        assertEquals(emptyList<String>(), leftovers)
     }
 
     @Test

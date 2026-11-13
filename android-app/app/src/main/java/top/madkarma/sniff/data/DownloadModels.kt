@@ -9,14 +9,19 @@ data class DownloadResult(
     val merged: Boolean,
     val title: String,
     val cached: Boolean = false,
+    /** ABIs the server could not fetch, so the APK may lack native code for them. */
+    val failedAbis: List<String> = emptyList(),
 )
+
+/** Reports what is happening; [fraction] is the overall progress from 0 to 1, or null when unknown. */
+typealias ProgressListener = (message: UiText, fraction: Float?) -> Unit
 
 interface DownloadSource {
     suspend fun download(
         packageId: String,
         channel: ReleaseChannel,
         resign: Boolean = false,
-        onProgress: (UiText) -> Unit,
+        onProgress: ProgressListener,
     ): DownloadResult
 }
 

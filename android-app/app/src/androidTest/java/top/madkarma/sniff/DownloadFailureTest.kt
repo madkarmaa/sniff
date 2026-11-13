@@ -105,7 +105,7 @@ class DownloadFailureTest {
         val job = launch {
             SniffRepository(context, client).download(
                 context.packageName, ReleaseChannel.STABLE
-            ) { progress ->
+            ) { progress, _ ->
                 if (progress is UiText.Resource && progress.id == R.string.progress_downloading) {
                     firstByte.complete(Unit)
                 }

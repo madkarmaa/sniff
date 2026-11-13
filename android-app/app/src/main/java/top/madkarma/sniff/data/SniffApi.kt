@@ -8,7 +8,7 @@ import top.madkarma.sniff.BuildConfig
 import top.madkarma.sniff.R
 import java.util.concurrent.TimeUnit
 
-const val API_ROOT = "https://sniff.madkarma.top/v2"
+const val API_ROOT = "https://sniff.madkarma.top/v3"
 
 private const val API_CALL_TIMEOUT_SECONDS = 120L
 
@@ -56,7 +56,14 @@ internal class SniffApi(private val client: OkHttpClient) {
         val versionCode = details.getLong("version_code")
 
         val files = mutableListOf(
-            RemoteFile("base.apk", requiredUrl(data, "main_apk_url"), "apks/base.apk")
+            RemoteFile(
+                label = "base.apk",
+                url = requiredUrl(data, "main_apk_url"),
+                relativePath = "apks/base.apk",
+                size = data.optSize("main_apk_size"),
+                sha1 = data.optText("main_apk_sha1"),
+                sha256 = data.optText("main_apk_sha256"),
+            )
         )
 
         val splitCount = addSplits(data, files)
@@ -71,7 +78,19 @@ internal class SniffApi(private val client: OkHttpClient) {
             title = item.optText("title") ?: packageId,
             files = files.toList(),
             splitCount = splitCount,
+            failedAbis = failedAbis(data),
         )
+    }
+
+    /** The ABIs the server could not fetch, from the optional per-ABI "targets" of API v3. */
+    private fun failedAbis(data: JSONObject): List<String> {
+        val targets = data.optJSONArray("targets") ?: return emptyList()
+
+        return (0 until targets.length()).mapNotNull { index ->
+            val target = targets.optJSONObject(index) ?: return@mapNotNull null
+            // A target that does not say it failed is not reported as failed.
+            if (target.optBoolean("success", true)) null else target.optText("abi")
+        }.distinct()
     }
 
     private fun addSplits(data: JSONObject, files: MutableList<RemoteFile>): Int {
@@ -86,6 +105,9 @@ internal class SniffApi(private val client: OkHttpClient) {
                 label = "$name.apk",
                 url = requiredUrl(split, "download_url"),
                 relativePath = "apks/split-$numberedName-$name.apk",
+                size = split.optSize("size"),
+                sha1 = split.optText("sha1"),
+                sha256 = split.optText("sha256"),
             )
         }
 
@@ -102,7 +124,14 @@ internal class SniffApi(private val client: OkHttpClient) {
             val name = safeFileName(file.optText("filename") ?: "additional-$index")
             check(names.add(name)) { "API returned duplicate additional filenames" }
 
-            files += RemoteFile(name, requiredUrl(file, "download_url"), "additional/$name")
+            files += RemoteFile(
+                label = name,
+                url = requiredUrl(file, "download_url"),
+                relativePath = "additional/$name",
+                size = file.optSize("size"),
+                sha1 = file.optText("sha1"),
+                sha256 = file.optText("sha256"),
+            )
         }
     }
 
@@ -117,3 +146,7 @@ internal class SniffApi(private val client: OkHttpClient) {
 /** Returns the value of [key], or null when it is missing, JSON null, or blank. */
 private fun JSONObject.optText(key: String): String? =
     if (isNull(key)) null else optString(key).takeIf { it.isNotBlank() }
+
+/** Returns the byte count at [key], or null when it is missing, JSON null, or not a positive number. */
+private fun JSONObject.optSize(key: String): Long? =
+    if (isNull(key)) null else optLong(key, -1L).takeIf { it > 0 }

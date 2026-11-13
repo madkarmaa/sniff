@@ -26,6 +26,8 @@ private data class CachedDownload(
     val resigned: Boolean,
     val files: List<String>,
     val output: String,
+    /** The ABIs this download lacks because the server could not fetch them. */
+    val failedAbis: List<String>,
 )
 
 class SniffRepository(
@@ -41,13 +43,13 @@ class SniffRepository(
         packageId: String,
         channel: ReleaseChannel,
         resign: Boolean,
-        onProgress: (UiText) -> Unit,
+        onProgress: ProgressListener,
     ): DownloadResult = withContext(io) {
         if (!PACKAGE_ID_PATTERN.matches(packageId)) {
             throw AppException(uiText(R.string.error_invalid_package))
         }
 
-        onProgress(uiText(R.string.progress_fetching))
+        onProgress(uiText(R.string.progress_fetching), null)
 
         val plan = api.fetchDownloadPlan(packageId, channel)
         val folder = File(root, packageId)
@@ -67,7 +69,7 @@ class SniffRepository(
         folder: File,
         cached: CachedDownload,
         resign: Boolean,
-        onProgress: (UiText) -> Unit,
+        onProgress: ProgressListener,
     ): DownloadResult {
         val output = apkFile(plan, folder)
         val previous = File(folder, cached.output)
@@ -88,7 +90,9 @@ class SniffRepository(
             }
         }
 
-        if (renamed || rebuilt) writeInventory(plan, channel, folder, output, resign)
+        if (renamed || rebuilt) {
+            writeInventory(plan, channel, folder, output, resign, cached.failedAbis)
+        }
 
         return DownloadResult(
             apk = output,
@@ -97,6 +101,7 @@ class SniffRepository(
             merged = plan.hasSplits,
             title = plan.title,
             cached = true,
+            failedAbis = cached.failedAbis,
         )
     }
 
@@ -105,7 +110,7 @@ class SniffRepository(
         channel: ReleaseChannel,
         folder: File,
         resign: Boolean,
-        onProgress: (UiText) -> Unit,
+        onProgress: ProgressListener,
     ): DownloadResult {
         // The new version is staged separately so a failed update keeps the cached one.
         val staging = createStagingFolder(plan.packageId)
@@ -117,7 +122,7 @@ class SniffRepository(
 
             currentCoroutineContext().ensureActive()
 
-            writeInventory(plan, channel, staging, output, resign)
+            writeInventory(plan, channel, staging, output, resign, plan.failedAbis)
 
             folder.deleteRecursively()
             check(staging.renameTo(folder)) { "Could not update the cached download" }
@@ -128,6 +133,7 @@ class SniffRepository(
                 fileCount = plan.files.size,
                 merged = plan.hasSplits,
                 title = plan.title,
+                failedAbis = plan.failedAbis,
             )
         } catch (error: Throwable) {
             staging.deleteRecursively()
@@ -142,16 +148,22 @@ class SniffRepository(
         val cached = runCatching {
             val json = JSONObject(inventory.readText())
             val files = json.getJSONArray("files")
+            // Inventories written before API v3 have no list; they were complete downloads.
+            val failed = json.optJSONArray("failed_abis")
             CachedDownload(
                 versionCode = json.getLong("version_code"),
                 resigned = json.getBoolean("resigned"),
                 files = List(files.length()) { files.getString(it) },
                 output = json.getString("output"),
+                failedAbis = failed?.let { abis -> List(abis.length()) { abis.getString(it) } }.orEmpty(),
             )
         }.getOrNull() ?: return null
 
         val complete = cached.files.all { File(folder, it).isFile }
-        return cached.takeIf { it.versionCode == plan.versionCode && complete }
+        // A download that lacks ABIs is only reused if the server still cannot offer them; otherwise
+        // downloading again completes it.
+        val sufficient = plan.failedAbis.containsAll(cached.failedAbis)
+        return cached.takeIf { it.versionCode == plan.versionCode && complete && sufficient }
     }
 
     /** Staging folders and folders from older app versions are never valid package IDs. */
@@ -168,24 +180,40 @@ class SniffRepository(
     private fun apkFile(plan: DownloadPlan, folder: File): File =
         File(folder, "${plan.packageId}_${plan.versionCode}.apk")
 
-    private suspend fun downloadFiles(
-        plan: DownloadPlan, folder: File, onProgress: (UiText) -> Unit
-    ) {
+    private suspend fun downloadFiles(plan: DownloadPlan, folder: File, onProgress: ProgressListener) {
+        // Bytes of the files that are done. Together with the size of the current file and the API
+        // sizes of the later ones this gives the overall total; any later file of unknown size
+        // makes the total, and so the progress bar, indeterminate.
+        var finished = 0L
+
         plan.files.forEachIndexed { index, file ->
             currentCoroutineContext().ensureActive()
 
             val output = File(folder, file.relativePath)
             output.parentFile!!.mkdirs()
 
-            downloader.download(file, output) { size, total ->
-                val sizeText =
-                    if (total > 0) "${formatBytes(size)} / ${formatBytes(total)}" else formatBytes(size)
+            val laterSizes = plan.files.drop(index + 1).map { it.size }
+            val laterTotal = if (null in laterSizes) null else laterSizes.sumOf { it ?: 0L }
+
+            val downloaded = downloader.download(file, output) { received, contentLength ->
+                // The API size is exact; otherwise the response header is the best guess.
+                val expected = file.size ?: contentLength.takeIf { it > 0 }
+                val total =
+                    if (expected != null && laterTotal != null) finished + expected + laterTotal else null
+
+                val sizeText = if (expected != null) {
+                    "${formatBytes(received)} / ${formatBytes(expected)}"
+                } else {
+                    formatBytes(received)
+                }
                 onProgress(
                     uiText(
                         R.string.progress_downloading, index + 1, plan.files.size, file.label, sizeText
-                    )
+                    ),
+                    total?.let { ((finished + received).toFloat() / it).coerceIn(0f, 1f) },
                 )
             }
+            finished += downloaded
         }
     }
 
@@ -193,14 +221,14 @@ class SniffRepository(
         plan: DownloadPlan,
         folder: File,
         resign: Boolean,
-        onProgress: (UiText) -> Unit,
+        onProgress: ProgressListener,
         output: File = apkFile(plan, folder),
     ): File {
         currentCoroutineContext().ensureActive()
 
         if (plan.hasSplits) {
             val message = if (resign) R.string.progress_merging_signing else R.string.progress_merging
-            onProgress(uiText(message, plan.splitCount + 1))
+            onProgress(uiText(message, plan.splitCount + 1), null)
             ApkMerger.merge(File(folder, "apks"), output, plan.packageId, plan.versionCode, resign)
         } else {
             copyOriginalApk(File(folder, "apks/base.apk"), output, plan)
@@ -221,7 +249,12 @@ class SniffRepository(
     }
 
     private fun writeInventory(
-        plan: DownloadPlan, channel: ReleaseChannel, folder: File, output: File, resign: Boolean
+        plan: DownloadPlan,
+        channel: ReleaseChannel,
+        folder: File,
+        output: File,
+        resign: Boolean,
+        failedAbis: List<String>,
     ) {
         // Signed download URLs expire and must not be included in exported inventories.
         val inventory =
@@ -229,7 +262,7 @@ class SniffRepository(
                 .put("channel", channel.apiName).put("merged", plan.hasSplits)
                 .put("resigned", plan.hasSplits && resign)
                 .put("files", JSONArray(plan.files.map { it.relativePath }))
-                .put("output", output.name)
+                .put("output", output.name).put("failed_abis", JSONArray(failedAbis))
 
         File(folder, INVENTORY_FILE).writeText(inventory.toString(2))
     }

@@ -52,4 +52,9 @@
     <string name="error_api_failed">API request failed (HTTP %1$d). Try again later.</string>
     <string name="error_file_http">Download of %1$s failed (HTTP %2$d)</string>
     <string name="error_file_incomplete">Incomplete download of %1$s</string>
+    <string name="error_file_size">The size of %1$s does not match what Google Play reports. Try again.</string>
+    <string name="error_file_checksum">%1$s is corrupted: its checksum does not match what Google Play reports. Try again.</string>
+    <string name="note_partial_targets">The server could not fetch the files for this device (%1$s). The app may not run here.</string>
+    <string name="notification_channel_name">Downloads</string>
+    <string name="notification_working">Downloading and preparing the app…</string>
 </resources>

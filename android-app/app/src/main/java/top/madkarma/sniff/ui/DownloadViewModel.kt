@@ -27,10 +27,13 @@ import top.madkarma.sniff.data.toDownloadError
 import top.madkarma.sniff.data.toInstallError
 import top.madkarma.sniff.data.toSaveError
 import top.madkarma.sniff.data.uiText
+import top.madkarma.sniff.service.ActiveWork
 
 data class DownloadUiState(
     val busy: Boolean = false,
     val message: UiText? = null,
+    /** Overall progress from 0 to 1 while busy; null when it is not known, such as when merging. */
+    val progress: Float? = null,
     val error: Boolean = false,
     val result: DownloadResult? = null,
 )
@@ -63,11 +66,11 @@ class DownloadViewModel(
         if (state.value.busy) return
         mutableState.value = DownloadUiState(busy = true)
 
-        task = viewModelScope.launch {
+        task = launchWork {
             try {
                 val packageId = packageIdFromInput(input)
-                val result = repository.download(packageId, channel, resign) { message ->
-                    mutableState.update { it.copy(message = message) }
+                val result = repository.download(packageId, channel, resign) { message, fraction ->
+                    mutableState.update { it.copy(message = message, progress = fraction) }
                 }
 
                 mutableState.value = DownloadUiState(
@@ -130,7 +133,7 @@ class DownloadViewModel(
             it.copy(busy = true, error = false, message = uiText(R.string.status_install_preparing))
         }
 
-        task = viewModelScope.launch {
+        task = launchWork {
             try {
                 val session = installer.install(result) { installSession = it }
                 // The outcome may have been handled already while this coroutine was resuming.
@@ -187,6 +190,23 @@ class DownloadViewModel(
                 mutableState.update { it.copy(busy = false) }
             }
         }
+    }
+
+    /**
+     * Runs [block] as the current task. While it runs the process counts as busy, which keeps
+     * the foreground service alive, see [ActiveWork]. The install task ends once the session is committed,
+     * so waiting for the system dialog does not hold the service.
+     */
+    private fun launchWork(block: suspend () -> Unit): Job {
+        ActiveWork.set(true)
+        return viewModelScope.launch { block() }.also {
+            it.invokeOnCompletion { ActiveWork.set(false) }
+        }
+    }
+
+    override fun onCleared() {
+        // The scope is cancelled, so the task is too; this also covers a task that never started.
+        ActiveWork.set(false)
     }
 
     private companion object {

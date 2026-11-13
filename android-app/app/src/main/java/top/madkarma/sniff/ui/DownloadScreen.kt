@@ -1,9 +1,12 @@
 package top.madkarma.sniff.ui
 
+import android.Manifest
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -46,6 +49,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -54,6 +58,8 @@ import top.madkarma.sniff.data.DownloadResult
 import top.madkarma.sniff.data.ExportFormat
 import top.madkarma.sniff.data.ReleaseChannel
 import top.madkarma.sniff.data.UiText
+import top.madkarma.sniff.service.ActiveWork
+import top.madkarma.sniff.service.startDownloadService
 import top.madkarma.sniff.util.formatBytes
 
 /** Text from outside the app for the package field; each instance is a separate event. */
@@ -72,6 +78,18 @@ internal fun DownloadScreen(model: DownloadViewModel, incoming: IncomingInput? =
     val context = LocalContext.current
     val focus = LocalFocusManager.current
     val shareTitle = stringResource(R.string.share_apk)
+
+    // The foreground service keeps the process alive in the background; it stops itself when the
+    // work ends, so only the start is requested here. Starting is only allowed in the foreground.
+    val working by ActiveWork.active.collectAsStateWithLifecycle()
+    LaunchedEffect(working) { if (working) startDownloadService(context) }
+
+    // Asked once, on the first download. The download does not wait for the answer: the service
+    // runs without the permission, only its notification stays hidden.
+    var askedForNotifications by rememberSaveable { mutableStateOf(false) }
+    val askNotifications = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) {}
 
     fun export(uri: Uri?, format: ExportFormat) {
         val result = pendingExport ?: state.result
@@ -136,6 +154,15 @@ internal fun DownloadScreen(model: DownloadViewModel, incoming: IncomingInput? =
             onResignChange = { resign = it },
             onDownload = {
                 focus.clearFocus()
+                // Notification permission exists from Android 13 (API 33).
+                if (!askedForNotifications && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                    ContextCompat.checkSelfPermission(
+                        context, Manifest.permission.POST_NOTIFICATIONS
+                    ) != PackageManager.PERMISSION_GRANTED
+                ) {
+                    askedForNotifications = true
+                    askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
                 model.download(packageId, channel, resign)
             },
         )
@@ -235,7 +262,12 @@ private fun DownloadForm(
 @Composable
 private fun DownloadStatus(state: DownloadUiState, onCancel: () -> Unit) {
     if (state.busy) {
-        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        val progress = state.progress
+        if (progress != null) {
+            LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
+        } else {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        }
         OutlinedButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) }
     }
     state.message?.let { message ->
@@ -259,6 +291,18 @@ private fun DownloadResultCard(
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(result.title, style = MaterialTheme.typography.titleLarge)
             Text("${result.apk.name} · ${formatBytes(result.apk.length())}")
+            // Not an error: the download worked, but some device variants are missing from it.
+            // Only ABIs this device can run matter here; the others would go unused anyway.
+            val missingAbis = result.failedAbis.filter { it in Build.SUPPORTED_ABIS }
+            if (missingAbis.isNotEmpty()) {
+                Text(
+                    text = stringResource(
+                        R.string.note_partial_targets, missingAbis.joinToString(", ")
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             Button(
                 onClick = onInstall,
                 enabled = enabled,
