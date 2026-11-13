@@ -22,3 +22,11 @@ enabled = true
 # no `id` because Wrangler creates the namespace on the first deploy.
 [[kv_namespaces]]
 binding = "SESSIONS"
+
+# Uncached lookups per client address and Cloudflare location. The period
+# must match `rate_limit::PERIOD_SECS`; `namespace_id` is any account-unique
+# integer.
+[[ratelimits]]
+name = "LOOKUP_LIMITER"
+namespace_id = "3001"
+simple = { limit = 10, period = 60 }

@@ -9,6 +9,7 @@ mod google_play_client;
 mod handlers;
 mod openapi_schema;
 mod package_name;
+mod rate_limit;
 mod responses;
 mod serializable_types;
 mod session_cache;
@@ -17,7 +18,7 @@ mod session_store;
 
 use api_error::ApiError;
 use client_registry::shared_registry;
-use handlers::AppState;
+use handlers::{AppState, Caller};
 use openapi_schema::ApiDoc;
 use std::rc::Rc;
 use utoipa::OpenApi;
@@ -86,8 +87,11 @@ fn openapi_json(_req: Request, _ctx: RouteContext<AppState>) -> Result<Response>
 async fn download(req: Request, ctx: RouteContext<AppState>) -> Result<Response> {
     let package_name = route_param(&ctx, "package_name")?;
     let channel = route_param(&ctx, "channel")?;
-    let request_url = req.url()?;
-    handlers::get_download_info(package_name, channel, request_url, ctx.data.clone()).await
+    let caller = Caller {
+        request_url: req.url()?,
+        address: req.headers().get("CF-Connecting-IP")?,
+    };
+    handlers::get_download_info(package_name, channel, caller, ctx.data.clone()).await
 }
 
 /// Whether `req` is a CORS preflight for an API route.
@@ -101,6 +105,7 @@ async fn route(req: Request, env: Env, ctx: Context) -> Result<Response> {
     let state = AppState {
         registry: shared_registry(&env),
         ctx: Rc::new(ctx),
+        limiter: rate_limit::open(&env).map(Rc::new),
     };
     let docs_path = format!("{API_PREFIX}/docs");
     let spec_path = format!("{API_PREFIX}/openapi.json");

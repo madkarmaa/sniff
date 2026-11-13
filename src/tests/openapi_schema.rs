@@ -251,14 +251,19 @@ fn openapi_documents_every_status_code_the_worker_can_return() -> Result<(), ser
     documented.sort_unstable();
     assert_eq!(
         documented,
-        ["200", "400", "404", "422", "500", "501", "502", "503"]
+        [
+            "200", "400", "404", "422", "429", "500", "501", "502", "503"
+        ]
     );
-    assert!(
-        spec.pointer(
-            "/paths/~1v3~1download~1{package_name}~1{channel}/get/responses/503/headers/Retry-After"
-        )
-        .is_some()
-    );
+    for status in ["429", "503"] {
+        assert!(
+            spec.pointer(&format!(
+                "/paths/~1v3~1download~1{{package_name}}~1{{channel}}/get/responses/{status}/headers/Retry-After"
+            ))
+            .is_some(),
+            "{status}"
+        );
+    }
     Ok(())
 }
 

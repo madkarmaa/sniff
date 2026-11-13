@@ -5,6 +5,7 @@
 //! Nothing here touches the Workers runtime, so it is unit-testable natively.
 
 use crate::google_play_client::Channel;
+use crate::rate_limit;
 use gpapi::error::{Error as GpapiError, ErrorKind as GpapiErrorKind, http_status};
 use std::error::Error as StdError;
 use std::fmt;
@@ -30,6 +31,8 @@ pub enum ErrorKind {
     NotConfigured,
     /// Google rate-limited us (503 with `Retry-After`).
     RateLimited,
+    /// The client made too many uncached lookups (429 with `Retry-After`).
+    TooManyRequests,
     /// Google failed or sent something unusable: non-2xx, network error,
     /// undecodable response, login failure (502).
     Upstream,
@@ -44,6 +47,7 @@ impl ErrorKind {
             Self::InvalidRequest | Self::ChannelUnavailable => 400,
             Self::NotFound => 404,
             Self::NotDownloadable => 422,
+            Self::TooManyRequests => 429,
             Self::NotConfigured => 501,
             Self::RateLimited => 503,
             Self::Upstream => 502,
@@ -107,6 +111,13 @@ impl ApiError {
         )
     }
 
+    pub fn too_many_requests() -> Self {
+        Self::new(
+            ErrorKind::TooManyRequests,
+            "Too many lookups from this address. Try again in a minute.",
+        )
+    }
+
     pub fn internal() -> Self {
         Self::new(ErrorKind::Internal, "Internal server error")
     }
@@ -150,6 +161,7 @@ impl ApiError {
     pub const fn retry_after_secs(&self) -> Option<u32> {
         match self.kind {
             ErrorKind::RateLimited => Some(RATE_LIMIT_RETRY_AFTER_SECS),
+            ErrorKind::TooManyRequests => Some(rate_limit::PERIOD_SECS),
             _ => None,
         }
     }

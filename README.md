@@ -14,6 +14,7 @@ code, changelog, and download size.
 - Every file comes with its size and hashes, and a `targets` list shows which ABIs made it into the merge.
 - Successful lookups are cached at the edge for 120 seconds, and CORS is open so browser apps can call the API.
 - Worker instances share Google sessions and their registered devices through Workers KV, so the accounts do not collect a new device per instance.
+- Each client gets 10 uncached lookups per minute, which keeps one client from getting the Google accounts rate limited.
 
 ## API endpoints
 
@@ -182,6 +183,7 @@ Error response:
 | 400 | Invalid channel, invalid package name, or the channel's account has not joined the app's testing program |
 | 404 | Google Play does not know the app |
 | 422 | The app cannot be downloaded: Google refused the purchase or delivery for every target, typically a paid app or one not offered to the accounts and devices this service uses |
+| 429 | Too many uncached lookups from this client; wait for the `Retry-After` delay (seconds) |
 | 500 | Internal error or server misconfiguration (for example missing `STABLE_*` or `DEVICE_NAME`) |
 | 501 | The requested channel's credentials are not configured on this deployment |
 | 502 | Google Play failed: a non-2xx answer, network error, unusable response or login failure |
@@ -203,6 +205,9 @@ the Worker's logs.
   logged and ignored.
 - Error responses carry `Cache-Control: no-store`; the docs page and the OpenAPI
   document are cacheable for 5 minutes.
+- Each client address (IPv6: its /64 network) may make 10 uncached lookups per minute
+  in each Cloudflare location; more get a 429 with `Retry-After`. Edge-cache hits are
+  never counted. The limit is the `LOOKUP_LIMITER` binding in `wrangler.toml`.
 
 **Google sessions:**
 
@@ -304,6 +309,7 @@ are only needed to serve those channels.
 - `ALPHA_EMAIL`: Email enrolled in alpha programs
 - `ALPHA_AAS_TOKEN`: Authentication token for alpha access
 
-`wrangler.toml` also declares a binding:
+`wrangler.toml` also declares two bindings:
 
 - `SESSIONS`: KV namespace for Google sessions and registered devices
+- `LOOKUP_LIMITER`: Rate limit for uncached lookups per client (10 per 60 seconds)

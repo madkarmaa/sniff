@@ -7,17 +7,27 @@ use crate::openapi_schema::{
     TargetReport,
 };
 use crate::package_name::validate_package_name;
+use crate::rate_limit;
 use crate::responses;
 use crate::serializable_types::SerializableDetailsResponse as JsonDetails;
 use std::rc::Rc;
 use std::str::FromStr;
-use worker::{Context, Response, Result, Url, console_error};
+use worker::{Context, RateLimiter, Response, Result, Url, console_error};
 
 /// Per-request state shared with the route handlers.
 #[derive(Clone)]
 pub struct AppState {
     pub registry: SharedClientRegistry,
     pub ctx: Rc<Context>,
+    /// Limits uncached lookups per client; `None` when not bound.
+    pub limiter: Option<Rc<RateLimiter>>,
+}
+
+/// Who is asking, as far as the rate limit is concerned.
+pub struct Caller {
+    pub request_url: Url,
+    /// `CF-Connecting-IP`; absent only outside Cloudflare's edge.
+    pub address: Option<String>,
 }
 
 // The `path` literal must match `crate::API_PREFIX` (utoipa needs a literal);
@@ -109,6 +119,17 @@ pub struct AppState {
              "error": "This app cannot be downloaded: it may be paid or not available to the accounts and devices used by this service"
          })
         ),
+        (status = 429, description = "Too many uncached lookups from this client address (IPv6: its /64 network); retry after the delay in Retry-After. Edge-cache hits are never limited.",
+         body = ErrorResponse,
+         headers(
+             ("Retry-After" = u32, description = "Seconds to wait before retrying")
+         ),
+         example = json!({
+             "success": false,
+             "data": null,
+             "error": "Too many lookups from this address. Try again in a minute."
+         })
+        ),
         (status = 500, description = "Internal server error, including server misconfiguration",
          body = ErrorResponse,
          example = json!({
@@ -163,7 +184,7 @@ pub struct AppState {
 pub async fn get_download_info(
     package_name: String,
     channel: String,
-    request_url: Url,
+    caller: Caller,
     app: AppState,
 ) -> Result<Response> {
     let channel = match Channel::from_str(&channel) {
@@ -175,9 +196,13 @@ pub async fn get_download_info(
     }
 
     // Keyed by the validated inputs, so a hit never reaches Google.
-    let cache_key = edge_cache::cache_key(&request_url, &package_name, channel);
+    let cache_key = edge_cache::cache_key(&caller.request_url, &package_name, channel);
     if let Some(hit) = edge_cache::lookup(&cache_key).await {
         return Ok(hit);
+    }
+    // Only misses reach Google, so only misses count against the client.
+    if !rate_limit::allow(app.limiter.as_deref(), caller.address.as_deref()).await {
+        return responses::error(&ApiError::too_many_requests());
     }
 
     let lookup = match app.registry.get_download_info(&package_name, channel).await {

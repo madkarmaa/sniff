@@ -24,6 +24,7 @@ fn kinds_map_to_the_documented_status_codes() {
         (ErrorKind::ChannelUnavailable, 400),
         (ErrorKind::NotFound, 404),
         (ErrorKind::NotDownloadable, 422),
+        (ErrorKind::TooManyRequests, 429),
         (ErrorKind::Internal, 500),
         (ErrorKind::NotConfigured, 501),
         (ErrorKind::Upstream, 502),
@@ -50,6 +51,7 @@ fn constructors_use_the_expected_kinds() {
         "Channel 'alpha' is not available for package 'com.a.b'"
     );
     assert_eq!(ApiError::internal().status(), 500);
+    assert_eq!(ApiError::too_many_requests().status(), 429);
 }
 
 #[test]
@@ -57,6 +59,10 @@ fn only_rate_limits_carry_retry_after() {
     assert_eq!(
         ApiError::rate_limited().retry_after_secs(),
         Some(RATE_LIMIT_RETRY_AFTER_SECS)
+    );
+    assert_eq!(
+        ApiError::too_many_requests().retry_after_secs(),
+        Some(crate::rate_limit::PERIOD_SECS)
     );
     for kind in [
         ErrorKind::Upstream,
