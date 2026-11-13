@@ -12,6 +12,8 @@ mod package_name;
 mod responses;
 mod serializable_types;
 mod session_cache;
+mod session_source;
+mod session_store;
 
 use api_error::ApiError;
 use client_registry::shared_registry;

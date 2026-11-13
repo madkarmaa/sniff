@@ -1,6 +1,6 @@
 use crate::api_error::ApiError;
 use googleplay_protobuf::DetailsResponse;
-use gpapi::{DownloadInfo, Gpapi};
+use gpapi::{DownloadInfo, Gpapi, SessionState};
 use std::str::FromStr;
 use worker::console_error;
 
@@ -98,6 +98,30 @@ impl GooglePlayClient {
     /// Returns the upstream error if login fails.
     pub async fn initialize(&mut self) -> Result<(), UpstreamError> {
         self.client.login().await
+    }
+
+    /// Renew the session of the registered device, or log in when there is
+    /// none; see `Gpapi::reauthenticate`.
+    ///
+    /// # Errors
+    ///
+    /// Returns the upstream error if login fails.
+    pub async fn reauthenticate(&mut self) -> Result<(), UpstreamError> {
+        self.client.reauthenticate().await
+    }
+
+    #[must_use]
+    pub const fn has_registered_device(&self) -> bool {
+        self.client.has_registered_device()
+    }
+
+    #[must_use]
+    pub fn session_state(&self) -> Option<SessionState> {
+        self.client.session_state()
+    }
+
+    pub fn restore_session(&mut self, state: SessionState) {
+        self.client.restore_session(state);
     }
 
     /// Fetch app details; `None` when Google Play does not know the app.

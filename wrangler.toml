@@ -16,3 +16,9 @@ DEVICE_NAME="px_9a"
 
 [observability]
 enabled = true
+
+# Google Play sessions and their registered devices, shared by every isolate
+# so each cold start does not check a new device in on the accounts. There is
+# no `id` because Wrangler creates the namespace on the first deploy.
+[[kv_namespaces]]
+binding = "SESSIONS"

@@ -13,6 +13,7 @@ code, changelog, and download size.
 - Splits are merged across arm64-v8a, armeabi-v7a, x86, and x86_64 devices, so one call lists every APK split the app ships.
 - Every file comes with its size and hashes, and a `targets` list shows which ABIs made it into the merge.
 - Successful lookups are cached at the edge for 120 seconds, and CORS is open so browser apps can call the API.
+- Worker instances share Google sessions and their registered devices through Workers KV, so the accounts do not collect a new device per instance.
 
 ## API endpoints
 
@@ -202,8 +203,19 @@ the Worker's logs.
   logged and ignored.
 - Error responses carry `Cache-Control: no-store`; the docs page and the OpenAPI
   document are cacheable for 5 minutes.
-- Google sessions are reused per Worker instance. If Google rejects one early (HTTP
-  401/403), the Worker logs in again and retries that call once.
+
+**Google sessions:**
+
+Every Google Play login checks a device in on the channel's account. The Worker stores
+the registered device and its session in the `SESSIONS` KV namespace, one record per
+channel, device and ABI, so Worker instances share them instead of each checking a new
+device in. After 30 minutes the Worker renews a session on the same device, and a
+device nobody used for 30 days expires. If Google rejects a session early (HTTP
+401/403), the Worker renews it and retries that call once. If Google rejects the
+renewed session too, the Worker drops the stored device and the next lookup checks a
+new one in. The records hold session tokens, so treat the namespace like the other
+secrets. Wrangler creates the namespace on the first deploy. Without the binding, each
+Worker instance keeps its own sessions.
 
 ## Android app
 
@@ -291,3 +303,7 @@ are only needed to serve those channels.
 - `BETA_AAS_TOKEN`: Authentication token for beta access
 - `ALPHA_EMAIL`: Email enrolled in alpha programs
 - `ALPHA_AAS_TOKEN`: Authentication token for alpha access
+
+`wrangler.toml` also declares a binding:
+
+- `SESSIONS`: KV namespace for Google sessions and registered devices
