@@ -205,7 +205,13 @@ fn merge_download_infos(download_infos: Vec<DownloadInfo>) -> DownloadInfo {
     let mut additional_filenames = HashSet::new();
 
     for info in download_infos {
-        merged.main_apk_url = merged.main_apk_url.or(info.main_apk_url);
+        // Size and hashes must come from the same info as the URL they describe.
+        if merged.main_apk_url.is_none() && info.main_apk_url.is_some() {
+            merged.main_apk_url = info.main_apk_url;
+            merged.main_apk_size = info.main_apk_size;
+            merged.main_apk_sha1 = info.main_apk_sha1;
+            merged.main_apk_sha256 = info.main_apk_sha256;
+        }
         merged.dex_metadata_url = merged.dex_metadata_url.or(info.dex_metadata_url);
 
         for split in info.splits {
@@ -226,8 +232,12 @@ fn merge_download_infos(download_infos: Vec<DownloadInfo>) -> DownloadInfo {
 
 /// Push `item` unless one with the same name (or URL, when unnamed) was already pushed.
 fn push_unique(target: &mut Vec<NamedDownload>, seen: &mut HashSet<String>, item: NamedDownload) {
-    let (name, url) = &item;
-    let key = name.as_ref().or(url.as_ref()).cloned().unwrap_or_default();
+    let key = item
+        .name
+        .as_ref()
+        .or(item.download_url.as_ref())
+        .cloned()
+        .unwrap_or_default();
     if seen.insert(key) {
         target.push(item);
     }

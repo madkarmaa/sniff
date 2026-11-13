@@ -28,15 +28,18 @@ fn download_response_preserves_metadata_and_downloads() -> Result<(), serde_json
     let metadata = serde_json::to_value(SerializableDetailsResponse(details.clone()))?;
     let download = DownloadInfo::from(gpapi::DownloadInfo {
         main_apk_url: Some("https://example.com/main.apk".into()),
-        splits: vec![(
-            Some("config.arm64_v8a".into()),
-            Some("https://example.com/arm64.apk".into()),
-        )],
-        additional_files: vec![(
-            Some("main.123.com.example.obb".into()),
-            Some("https://example.com/main.obb".into()),
-        )],
+        splits: vec![gpapi::NamedDownload {
+            name: Some("config.arm64_v8a".into()),
+            download_url: Some("https://example.com/arm64.apk".into()),
+            ..Default::default()
+        }],
+        additional_files: vec![gpapi::NamedDownload {
+            name: Some("main.123.com.example.obb".into()),
+            download_url: Some("https://example.com/main.obb".into()),
+            ..Default::default()
+        }],
         dex_metadata_url: Some("https://example.com/main.dm".into()),
+        ..Default::default()
     });
     let urls = serde_json::to_value(&download)?;
     let response = serde_json::to_value(ApiResponse {

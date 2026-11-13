@@ -284,14 +284,17 @@ impl From<gpapi::DownloadInfo> for DownloadInfo {
             splits: info
                 .splits
                 .into_iter()
-                .map(|(name, download_url)| SplitFile { name, download_url })
+                .map(|split| SplitFile {
+                    name: split.name,
+                    download_url: split.download_url,
+                })
                 .collect(),
             additional_files: info
                 .additional_files
                 .into_iter()
-                .map(|(filename, download_url)| AdditionalFile {
-                    filename,
-                    download_url,
+                .map(|file| AdditionalFile {
+                    filename: file.name,
+                    download_url: file.download_url,
                 })
                 .collect(),
             dex_metadata_url: info.dex_metadata_url,

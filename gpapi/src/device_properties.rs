@@ -28,13 +28,14 @@ impl EncodedDeviceProperties {
         }
     }
 
-    pub fn into_decoded(self) -> Result<DeviceProperties, prost::DecodeError> {
+    // Borrows so the shared, process-wide device map can be decoded from repeatedly.
+    pub fn decode(&self) -> Result<DeviceProperties, prost::DecodeError> {
         Ok(DeviceProperties {
             device_configuration: DeviceConfigurationProto::decode(
                 self.device_configuration.as_slice(),
             )?,
             android_checkin: AndroidCheckinProto::decode(self.android_checkin.as_slice())?,
-            extra_info: self.extra_info,
+            extra_info: self.extra_info.clone(),
         })
     }
 }

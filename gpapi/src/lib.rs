@@ -68,6 +68,7 @@ use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use std::collections::HashMap;
 use std::error::Error;
 use std::io::Cursor;
+use std::sync::LazyLock;
 
 use crate::error::{Error as GpapiError, ErrorKind as GpapiErrorKind};
 
@@ -83,13 +84,42 @@ include!("device_properties.rs");
 
 static DEVICES_ENCODED: &[u8] = include_bytes!("device_properties.bin");
 
-/// A `(name, download URL)` pair for a split APK or an additional file.
-pub type NamedDownload = (Option<String>, Option<String>);
+/// The device database, decoded once per process. A decode failure is kept as
+/// a message so `Gpapi::new` can report it as an error instead of panicking.
+static DEVICES: LazyLock<Result<HashMap<String, EncodedDeviceProperties>, String>> =
+    LazyLock::new(|| {
+        bincode::borrow_decode_from_slice::<
+            HashMap<String, EncodedDeviceProperties>,
+            bincode::config::Configuration,
+        >(DEVICES_ENCODED, bincode::config::standard())
+        .map(|(devices, _)| devices)
+        .map_err(|e| e.to_string())
+    });
+
+/// A split APK or an additional file, with the size and hashes Google reports for it.
+///
+/// `sha1` and `sha256` are passed through exactly as Google sends them
+/// (typically base64url-style strings, not hex); they are not transformed.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct NamedDownload {
+    pub name: Option<String>,
+    pub download_url: Option<String>,
+    /// Download size in bytes.
+    pub size: Option<i64>,
+    pub sha1: Option<String>,
+    pub sha256: Option<String>,
+}
 
 /// Download URLs returned by the Play Store delivery endpoint.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DownloadInfo {
     pub main_apk_url: Option<String>,
+    /// Main APK download size in bytes.
+    pub main_apk_size: Option<i64>,
+    /// Main APK SHA-1 as sent by Google (typically base64url-style, not hex).
+    pub main_apk_sha1: Option<String>,
+    /// Main APK SHA-256 as sent by Google (typically base64url-style, not hex).
+    pub main_apk_sha256: Option<String>,
     pub splits: Vec<NamedDownload>,
     /// Expansion files, named `main.<version>.<package>.obb` or `patch.<version>.<package>.obb`.
     pub additional_files: Vec<NamedDownload>,
@@ -125,31 +155,27 @@ impl Gpapi {
         email: impl Into<String>,
     ) -> Result<Self, Box<dyn Error + Send + Sync>> {
         let codename: String = device_codename.into();
-        let (mut devices, _) = bincode::borrow_decode_from_slice::<
-            HashMap<String, EncodedDeviceProperties>,
-            bincode::config::Configuration,
-        >(DEVICES_ENCODED, bincode::config::standard())
-        .map_err(|e| -> Box<dyn Error + Send + Sync> {
-            Box::new(GpapiError::from(format!(
-                "failed to decode device database: {e}"
-            )))
-        })?;
-        let encoded =
-            devices
-                .remove(&codename)
-                .ok_or_else(|| -> Box<dyn Error + Send + Sync> {
-                    Box::new(GpapiError::from(format!(
-                        "invalid device codename: {codename}"
-                    )))
-                })?;
-        let device_properties =
-            encoded
-                .into_decoded()
-                .map_err(|e| -> Box<dyn Error + Send + Sync> {
-                    Box::new(GpapiError::from(format!(
-                        "failed to decode device properties: {e}"
-                    )))
-                })?;
+        let devices = DEVICES
+            .as_ref()
+            .map_err(|e| -> Box<dyn Error + Send + Sync> {
+                Box::new(GpapiError::from(format!(
+                    "failed to decode device database: {e}"
+                )))
+            })?;
+        let encoded = devices
+            .get(&codename)
+            .ok_or_else(|| -> Box<dyn Error + Send + Sync> {
+                Box::new(GpapiError::from(format!(
+                    "invalid device codename: {codename}"
+                )))
+            })?;
+        let device_properties = encoded
+            .decode()
+            .map_err(|e| -> Box<dyn Error + Send + Sync> {
+                Box::new(GpapiError::from(format!(
+                    "failed to decode device properties: {e}"
+                )))
+            })?;
         Ok(Self {
             locale: String::from("en_US"),
             timezone: String::from("UTC"),
@@ -236,12 +262,12 @@ impl Gpapi {
         );
         headers.insert("app", String::from("com.google.android.gms"));
 
-        let body_bytes = self
-            .execute_request_helper("auth", None, Some(&form_body.into_bytes()), headers, false)
+        // Not `execute_request_helper`: `auth` explains failures in 4xx bodies.
+        let (status, body_bytes) = self
+            .send_request("auth", None, Some(&form_body.into_bytes()), headers, false)
             .await?;
 
-        let reply = parse_form_reply(std::str::from_utf8(&body_bytes)?);
-        Ok(reply)
+        parse_auth_reply(status, &body_bytes)
     }
 
     /// Get the aas token that has been previously set by either `request_aas_token` or
@@ -359,7 +385,13 @@ impl Gpapi {
             let splits = app_delivery_data
                 .split_delivery_data
                 .into_iter()
-                .map(|split| (split.name, split.download_url))
+                .map(|split| NamedDownload {
+                    name: split.name,
+                    download_url: split.download_url,
+                    size: split.download_size,
+                    sha1: split.sha1,
+                    sha256: split.sha256,
+                })
                 .collect();
             let additional_files = app_delivery_data
                 .additional_file
@@ -371,11 +403,21 @@ impl Gpapi {
                         "patch"
                     };
                     let filename = format!("{kind}.{}.{pkg_name}.obb", file.version_code?);
-                    Some((Some(filename), file.download_url))
+                    // Expansion files carry no sha256 in the delivery protobuf.
+                    Some(NamedDownload {
+                        name: Some(filename),
+                        download_url: file.download_url,
+                        size: file.size,
+                        sha1: file.sha1,
+                        sha256: None,
+                    })
                 })
                 .collect();
             return Ok(DownloadInfo {
                 main_apk_url: app_delivery_data.download_url,
+                main_apk_size: app_delivery_data.download_size,
+                main_apk_sha1: app_delivery_data.sha1,
+                main_apk_sha256: app_delivery_data.sha256,
                 splits,
                 additional_files,
                 dex_metadata_url: app_delivery_data
@@ -718,11 +760,12 @@ impl Gpapi {
             headers
         };
 
-        let bytes = self
-            .execute_request_helper("auth", Some(form_params), Some(&[]), headers, false)
+        // Not `execute_request_helper`: `auth` explains failures in 4xx bodies.
+        let (status, bytes) = self
+            .send_request("auth", Some(form_params), Some(&[]), headers, false)
             .await?;
 
-        let reply = parse_form_reply(std::str::from_utf8(&bytes)?);
+        let reply = parse_auth_reply(status, &bytes)?;
         let auth_token = reply.get("auth").cloned().ok_or_else(|| {
             let google_error = reply.get("error").cloned().unwrap_or_default();
             Box::new(GpapiError::from(format!(
@@ -821,6 +864,8 @@ impl Gpapi {
         Ok(resp)
     }
 
+    /// Like `send_request`, but turns non-success statuses into an HTTP error
+    /// instead of handing the body to a decoder that would misreport it.
     async fn execute_request_helper(
         &self,
         endpoint: &str,
@@ -829,6 +874,26 @@ impl Gpapi {
         headers: HashMap<&str, String>,
         fdfe: bool,
     ) -> Result<Bytes, Box<dyn Error + Send + Sync>> {
+        let (status, body) = self
+            .send_request(endpoint, query, msg, headers, fdfe)
+            .await?;
+        if is_success_status(status) {
+            Ok(body)
+        } else {
+            Err(http_error(status, &body))
+        }
+    }
+
+    /// Sends the request and returns the status with the raw body, without
+    /// judging the status.
+    async fn send_request(
+        &self,
+        endpoint: &str,
+        query: Option<HashMap<&str, String>>,
+        msg: Option<&[u8]>,
+        headers: HashMap<&str, String>,
+        fdfe: bool,
+    ) -> Result<(u16, Bytes), Box<dyn Error + Send + Sync>> {
         let base_url = consts::defaults::DEFAULT_BASE_URL;
         let mut url = if fdfe {
             Url::parse(&format!("{base_url}/fdfe/{endpoint}"))?
@@ -864,7 +929,47 @@ impl Gpapi {
             }
         };
 
-        Ok(res.bytes().await?)
+        let status = res.status().as_u16();
+        Ok((status, res.bytes().await?))
+    }
+}
+
+const fn is_success_status(status: u16) -> bool {
+    matches!(status, 200..=299)
+}
+
+/// Longest response excerpt kept in an HTTP error.
+const MAX_ERROR_BODY_CHARS: usize = 200;
+
+fn http_error(status: u16, body: &[u8]) -> Box<dyn Error + Send + Sync> {
+    // Truncate by chars, not bytes, so a multi-byte sequence is never split.
+    let body = String::from_utf8_lossy(body)
+        .trim()
+        .chars()
+        .take(MAX_ERROR_BODY_CHARS)
+        .collect();
+    Box::new(GpapiError::new(GpapiErrorKind::Http { status, body }))
+}
+
+/// Parses a form-encoded reply from the `auth` endpoint. That endpoint reports
+/// failures as `Error=...` bodies on 4xx statuses, so a non-success status is
+/// only an HTTP error when the body carries no such explanation (e.g. a 5xx
+/// or 429 page).
+fn parse_auth_reply(
+    status: u16,
+    body: &[u8],
+) -> Result<HashMap<String, String>, Box<dyn Error + Send + Sync>> {
+    match std::str::from_utf8(body) {
+        Ok(text) => {
+            let reply = parse_form_reply(text);
+            if is_success_status(status) || reply.contains_key("error") {
+                Ok(reply)
+            } else {
+                Err(http_error(status, body))
+            }
+        }
+        Err(e) if is_success_status(status) => Err(Box::new(e)),
+        Err(_) => Err(http_error(status, body)),
     }
 }
 
