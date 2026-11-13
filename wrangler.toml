@@ -1,10 +1,10 @@
-name = "sniff-v2"
+name = "sniff-v3"
 main = "build/worker/shim.mjs"
 compatibility_date = "2025-04-25"
 
 routes = [
-  { pattern = "sniff.madkarma.top/v2", zone_name = "madkarma.top" },
-  { pattern = "sniff.madkarma.top/v2/*", zone_name = "madkarma.top" },
+  { pattern = "sniff.madkarma.top/v3", zone_name = "madkarma.top" },
+  { pattern = "sniff.madkarma.top/v3/*", zone_name = "madkarma.top" },
   { pattern = "sniff.madkarma.top/*", zone_name = "madkarma.top" }
 ]
 

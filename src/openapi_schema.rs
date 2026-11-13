@@ -3,6 +3,7 @@
 // definitions even though there is no `if let/else` in hand-written code.
 #![allow(clippy::option_if_let_else)]
 
+use crate::client_registry::TargetOutcome;
 use serde::{Deserialize, Serialize};
 use utoipa::{OpenApi, ToSchema};
 
@@ -20,6 +21,7 @@ use utoipa::{OpenApi, ToSchema};
             DownloadInfo,
             SplitFile,
             AdditionalFile,
+            TargetReport,
             Item,
             DocumentDetails,
             AppDetails,
@@ -62,6 +64,11 @@ pub struct DownloadResponse<T> {
     pub details: T,
     #[serde(flatten)]
     pub download: DownloadInfo,
+    /// One entry per download target, in a fixed order. The download fields
+    /// above merge the targets that succeeded: when some failed, the result
+    /// can lack the splits those ABIs need, so check `success` before relying
+    /// on it. (Only a lookup where every target failed is an error response.)
+    pub targets: Vec<TargetReport>,
 }
 
 /// Error envelope. Matches the runtime error shape exactly: `data` is
@@ -146,24 +153,41 @@ pub struct SerializableDetailsResponse {
     pub enable_reviews: Option<bool>,
 }
 
+/// Download URLs merged across the targets that succeeded. Sizes are in
+/// bytes. `sha1` and `sha256` are passed through exactly as Google Play
+/// reports them, typically base64url-style strings and not hex; decode before
+/// comparing against a locally computed digest. Any of these can be `null`
+/// when Google does not report them.
 #[derive(Serialize, Deserialize, ToSchema)]
 #[schema(example = json!({
     "main_apk_url": "https://play.googleapis.com/download/by-token/download?token=AOTCm0Q...",
+    "main_apk_size": 12_345_678,
+    "main_apk_sha1": "yq3dhkoGu0Ub1SEcMRMyuP-g5Ps",
+    "main_apk_sha256": "xT8jM2k0g5Y9bQpQzC1m0KqB1G5w2h3o4vZ7nL8aRdE",
     "splits": [
         {
             "name": "config.arm64_v8a",
-            "download_url": "https://play.googleapis.com/download/by-token/download?token=AOTCm0R..."
-        },
-        {
-            "name": "config.en",
-            "download_url": "https://play.googleapis.com/download/by-token/download?token=AOTCm0S..."
+            "download_url": "https://play.googleapis.com/download/by-token/download?token=AOTCm0R...",
+            "size": 4_567_890,
+            "sha1": "aW1hZ2luYXJ5LXNoYTEtZGlnZXN0",
+            "sha256": "bm90LWEtcmVhbC1zaGEyNTYtZGlnZXN0LWp1c3QtYW4tZXhhbXBsZQ"
         }
     ],
-    "additional_files": []
+    "additional_files": [],
+    "dex_metadata_url": null
 }))]
 pub struct DownloadInfo {
     #[schema(example = "https://play.googleapis.com/download/by-token/download?token=AOTCm0Q...")]
     pub main_apk_url: Option<String>,
+    /// Main APK size in bytes.
+    #[schema(example = 12_345_678)]
+    pub main_apk_size: Option<i64>,
+    /// Main APK SHA-1 exactly as Google Play reports it (typically base64url, not hex).
+    #[schema(example = "yq3dhkoGu0Ub1SEcMRMyuP-g5Ps")]
+    pub main_apk_sha1: Option<String>,
+    /// Main APK SHA-256 exactly as Google Play reports it (typically base64url, not hex).
+    #[schema(example = "xT8jM2k0g5Y9bQpQzC1m0KqB1G5w2h3o4vZ7nL8aRdE")]
+    pub main_apk_sha256: Option<String>,
     pub splits: Vec<SplitFile>,
     pub additional_files: Vec<AdditionalFile>,
     pub dex_metadata_url: Option<String>,
@@ -175,6 +199,15 @@ pub struct SplitFile {
     pub name: Option<String>,
     #[schema(example = "https://play.googleapis.com/download/by-token/download?token=AOTCm0R...")]
     pub download_url: Option<String>,
+    /// Size in bytes.
+    #[schema(example = 4_567_890)]
+    pub size: Option<i64>,
+    /// SHA-1 exactly as Google Play reports it (typically base64url, not hex).
+    #[schema(example = "aW1hZ2luYXJ5LXNoYTEtZGlnZXN0")]
+    pub sha1: Option<String>,
+    /// SHA-256 exactly as Google Play reports it (typically base64url, not hex).
+    #[schema(example = "bm90LWEtcmVhbC1zaGEyNTYtZGlnZXN0LWp1c3QtYW4tZXhhbXBsZQ")]
+    pub sha256: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
@@ -183,6 +216,31 @@ pub struct AdditionalFile {
     pub filename: Option<String>,
     #[schema(example = "https://play.googleapis.com/download/by-token/download?token=AOTCm0T...")]
     pub download_url: Option<String>,
+    /// Size in bytes.
+    #[schema(example = 52_428_800)]
+    pub size: Option<i64>,
+    /// SHA-1 exactly as Google Play reports it (typically base64url, not hex).
+    #[schema(example = "ZXhhbXBsZS1vYmItc2hhMS1kaWdlc3Q")]
+    pub sha1: Option<String>,
+    /// SHA-256 exactly as Google Play reports it. Google reports none for
+    /// expansion files, so this is currently always `null`.
+    pub sha256: Option<String>,
+}
+
+/// Outcome of one download target (a device profile advertising one ABI).
+#[derive(Serialize, Deserialize, ToSchema)]
+pub struct TargetReport {
+    /// ABI the target advertised to Google Play.
+    #[schema(example = "arm64-v8a")]
+    pub abi: String,
+    /// Device profile used for the target.
+    #[schema(example = "px_9a")]
+    pub device: String,
+    /// Whether the target's download info was merged into the response.
+    #[schema(example = true)]
+    pub success: bool,
+    /// Short reason when `success` is false, otherwise `null`.
+    pub error: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
@@ -281,12 +339,18 @@ impl From<gpapi::DownloadInfo> for DownloadInfo {
     fn from(info: gpapi::DownloadInfo) -> Self {
         Self {
             main_apk_url: info.main_apk_url,
+            main_apk_size: info.main_apk_size,
+            main_apk_sha1: info.main_apk_sha1,
+            main_apk_sha256: info.main_apk_sha256,
             splits: info
                 .splits
                 .into_iter()
                 .map(|split| SplitFile {
                     name: split.name,
                     download_url: split.download_url,
+                    size: split.size,
+                    sha1: split.sha1,
+                    sha256: split.sha256,
                 })
                 .collect(),
             additional_files: info
@@ -295,9 +359,23 @@ impl From<gpapi::DownloadInfo> for DownloadInfo {
                 .map(|file| AdditionalFile {
                     filename: file.name,
                     download_url: file.download_url,
+                    size: file.size,
+                    sha1: file.sha1,
+                    sha256: file.sha256,
                 })
                 .collect(),
             dex_metadata_url: info.dex_metadata_url,
+        }
+    }
+}
+
+impl From<&TargetOutcome> for TargetReport {
+    fn from(outcome: &TargetOutcome) -> Self {
+        Self {
+            abi: outcome.target.abi.to_string(),
+            device: outcome.target.device.to_string(),
+            success: outcome.succeeded(),
+            error: outcome.error.clone(),
         }
     }
 }

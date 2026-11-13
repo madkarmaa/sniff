@@ -1511,7 +1511,7 @@ checksum = "149309498a5f7334b12ddae0cad8aba81ce785fe91755068867e017cf98fee46"
 
 [[package]]
 name = "sniff"
-version = "2.0.0"
+version = "3.0.0"
 dependencies = [
  "console_error_panic_hook",
  "futures-util",

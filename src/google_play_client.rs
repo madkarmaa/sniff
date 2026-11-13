@@ -1,6 +1,12 @@
+use crate::api_error::ApiError;
 use googleplay_protobuf::DetailsResponse;
 use gpapi::{DownloadInfo, Gpapi};
 use std::str::FromStr;
+use worker::console_error;
+
+/// Failure from gpapi, kept typed so callers can tell a rejected session
+/// (`gpapi::error::is_auth_failure`) from other failures before classifying it.
+pub type UpstreamError = Box<dyn std::error::Error + Send + Sync>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Channel {
@@ -57,7 +63,6 @@ impl Channel {
 #[derive(Clone)]
 pub struct GooglePlayClient {
     client: Gpapi,
-    channel: Channel,
 }
 
 impl GooglePlayClient {
@@ -65,66 +70,65 @@ impl GooglePlayClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the underlying `Gpapi` client cannot be created
-    /// for `device_name`.
+    /// Returns an internal error if the underlying `Gpapi` client cannot be
+    /// created for `device_name` (the device database is embedded, so this
+    /// means a bad `DEVICE_NAME` or a bug).
     pub fn new_for_abis(
         device_name: &str,
         supported_abis: &[String],
         email: &str,
         aas_token: &str,
-        channel: Channel,
-    ) -> Result<Self, String> {
-        let mut client =
-            Gpapi::new(device_name, email).map_err(|e| format!("failed to create client: {e}"))?;
+    ) -> Result<Self, ApiError> {
+        let mut client = Gpapi::new(device_name, email).map_err(|e| {
+            console_error!("Failed to create client for device {device_name}: {e}");
+            ApiError::misconfigured()
+        })?;
         if !supported_abis.is_empty() {
             client.set_supported_abis(supported_abis.iter().cloned());
         }
         client.set_aas_token(aas_token);
 
-        Ok(Self { client, channel })
+        Ok(Self { client })
     }
 
     /// Log in to Google Play.
     ///
     /// # Errors
     ///
-    /// Returns an error if login fails for this client's channel.
-    pub async fn initialize(&mut self) -> Result<(), String> {
-        let channel = self.channel;
-        self.client
-            .login()
-            .await
-            .map_err(|e| format!("Login error for {channel} channel: {e:?}"))
+    /// Returns the upstream error if login fails.
+    pub async fn initialize(&mut self) -> Result<(), UpstreamError> {
+        self.client.login().await
     }
 
-    /// Fetch app details.
+    /// Fetch app details; `None` when Google Play does not know the app.
     ///
     /// # Errors
     ///
-    /// Returns an error if the API request fails for this client's channel.
-    pub async fn get_details(&self, package_name: &str) -> Result<Option<DetailsResponse>, String> {
-        let channel = self.channel;
-        self.client
-            .details(package_name)
-            .await
-            .map_err(|e| format!("API error for {channel} channel: {e:?}"))
+    /// Returns the upstream error if the API request fails.
+    pub async fn get_details(
+        &self,
+        package_name: &str,
+    ) -> Result<Option<DetailsResponse>, UpstreamError> {
+        match self.client.details(package_name).await {
+            // The details endpoint answers 404 for unknown packages; before
+            // gpapi reported HTTP errors that surfaced as an empty payload.
+            Err(e) if gpapi::error::http_status(&*e) == Some(404) => Ok(None),
+            other => other,
+        }
     }
 
     /// Fetch download info.
     ///
     /// # Errors
     ///
-    /// Returns an error if the API request fails for this client's channel.
+    /// Returns the upstream error if the API request fails.
     pub async fn get_download_info(
         &self,
         package_name: &str,
         version_code: Option<i64>,
-    ) -> Result<DownloadInfo, String> {
-        let channel = self.channel;
+    ) -> Result<DownloadInfo, UpstreamError> {
         // Boxed: the download future is ~90kB, too large to hold inline.
-        Box::pin(self.client.get_download_info(package_name, version_code))
-            .await
-            .map_err(|e| format!("API error for {channel} channel: {e:?}"))
+        Box::pin(self.client.get_download_info(package_name, version_code)).await
     }
 }
 
