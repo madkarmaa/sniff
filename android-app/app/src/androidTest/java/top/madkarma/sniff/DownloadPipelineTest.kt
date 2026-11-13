@@ -142,7 +142,7 @@ class DownloadPipelineTest {
         val client = fixtureClient({ response }, AtomicInteger())
         val result = SniffRepository(context, client).download(
             context.packageName, ReleaseChannel.STABLE, resign = true
-        ) {}
+        ) { _, _ -> }
         try {
             assertFalse(result.merged)
             assertFalse(result.cached)
@@ -206,10 +206,10 @@ class DownloadPipelineTest {
         val response = standaloneResponse(installedVersion)
         val downloads = AtomicInteger()
         val repository = SniffRepository(context, fixtureClient({ response }, downloads))
-        val first = repository.download(context.packageName, ReleaseChannel.STABLE) {}
+        val first = repository.download(context.packageName, ReleaseChannel.STABLE) { _, _ -> }
         try {
             assertEquals(3, downloads.get())
-            val second = repository.download(context.packageName, ReleaseChannel.STABLE) {}
+            val second = repository.download(context.packageName, ReleaseChannel.STABLE) { _, _ -> }
             assertTrue(second.cached)
             assertEquals(3, downloads.get())
             assertEquals(first.apk, second.apk)
@@ -224,7 +224,7 @@ class DownloadPipelineTest {
         val response = standaloneResponse(installedVersion)
         val downloads = AtomicInteger()
         val repository = SniffRepository(context, fixtureClient({ response }, downloads))
-        val first = repository.download(context.packageName, ReleaseChannel.STABLE) {}
+        val first = repository.download(context.packageName, ReleaseChannel.STABLE) { _, _ -> }
         try {
             // Recreate the layout written by app versions that named the APK by package only.
             val legacy = File(first.folder, "${context.packageName}.apk")
@@ -234,7 +234,7 @@ class DownloadPipelineTest {
                 JSONObject(inventory.readText()).put("output", legacy.name).toString()
             )
 
-            val second = repository.download(context.packageName, ReleaseChannel.STABLE) {}
+            val second = repository.download(context.packageName, ReleaseChannel.STABLE) { _, _ -> }
             assertTrue(second.cached)
             assertEquals(3, downloads.get())
             assertEquals(first.apk, second.apk)
@@ -251,12 +251,12 @@ class DownloadPipelineTest {
         var response = standaloneResponse(installedVersion)
         val downloads = AtomicInteger()
         val repository = SniffRepository(context, fixtureClient({ response }, downloads))
-        val cached = repository.download(context.packageName, ReleaseChannel.STABLE) {}
+        val cached = repository.download(context.packageName, ReleaseChannel.STABLE) { _, _ -> }
         try {
             // A newer version code makes the downloaded APK fail its version check.
             response = standaloneResponse(installedVersion + 1)
             try {
-                repository.download(context.packageName, ReleaseChannel.STABLE) {}
+                repository.download(context.packageName, ReleaseChannel.STABLE) { _, _ -> }
                 fail("An APK that does not match the API version must be rejected")
             } catch (expected: IllegalStateException) {
                 assertTrue(expected.message.orEmpty().contains("does not match"))
@@ -268,7 +268,7 @@ class DownloadPipelineTest {
             assertTrue(cached.apk.isFile)
 
             response = standaloneResponse(installedVersion)
-            val reused = repository.download(context.packageName, ReleaseChannel.STABLE) {}
+            val reused = repository.download(context.packageName, ReleaseChannel.STABLE) { _, _ -> }
             assertTrue(reused.cached)
             assertEquals(6, downloads.get())
             assertArrayEquals(original, reused.apk.readBytes())

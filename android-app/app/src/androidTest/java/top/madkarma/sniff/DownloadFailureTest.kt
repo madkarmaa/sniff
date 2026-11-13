@@ -64,7 +64,7 @@ class DownloadFailureTest {
                 .message("Fixture").body(metadata.toResponseBody()).build()
         }.build()
         try {
-            SniffRepository(context, client).download(context.packageName, ReleaseChannel.STABLE) {}
+            SniffRepository(context, client).download(context.packageName, ReleaseChannel.STABLE) { _, _ -> }
             fail("A required split URL must not be silently skipped")
         } catch (expected: IllegalStateException) {
             assertTrue(expected.message.orEmpty().contains("required download URL"))
