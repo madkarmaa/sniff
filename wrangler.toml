@@ -9,7 +9,7 @@ routes = [
 ]
 
 [build]
-command = "cargo install -q --locked worker-build@0.8.6 && worker-build --release --locked"
+command = "cargo install -q --locked worker-build@0.9.0 && worker-build --release --locked"
 
 [vars]
 DEVICE_NAME="px_9a"
