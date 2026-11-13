@@ -8,6 +8,8 @@
     <string name="alpha">Alpha</string>
     <string name="download_apk">Download APK</string>
     <string name="resign">Re-sign</string>
+    <string name="resign_description">A merged APK is no longer validly signed by its developer. Re-signing signs it with a key generated on this device so it can be installed, but it cannot update a copy installed from Google Play and will not receive Play updates.</string>
+    <string name="clear">Clear</string>
     <string name="cancel">Cancel</string>
     <string name="save_apk">Save APK</string>
     <string name="share_apk">Share APK</string>

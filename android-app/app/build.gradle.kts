@@ -9,14 +9,18 @@ android {
 
     defaultConfig {
         applicationId = "top.madkarma.sniff"
-        minSdk = 31
+        minSdk = 26
         targetSdk = 37
         versionCode = 5
         versionName = "1.2.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
-    buildFeatures { compose = true }
+    // BuildConfig supplies the app version for the User-Agent header.
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
 
     signingConfigs.configureEach {
         enableV1Signing = false

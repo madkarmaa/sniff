@@ -21,6 +21,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -36,6 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
@@ -136,6 +139,16 @@ private fun DownloadForm(
         placeholder = { Text(stringResource(R.string.package_example)) },
         singleLine = true,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
+        trailingIcon = if (packageId.isEmpty()) null else {
+            {
+                IconButton(onClick = { onPackageIdChange("") }, enabled = enabled) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_clear),
+                        contentDescription = stringResource(R.string.clear),
+                    )
+                }
+            }
+        },
         modifier = Modifier.fillMaxWidth(),
     )
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -161,7 +174,14 @@ private fun DownloadForm(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Checkbox(checked = resign, onCheckedChange = null, enabled = enabled)
-        Text(stringResource(R.string.resign))
+        Column(Modifier.weight(1f)) {
+            Text(stringResource(R.string.resign))
+            Text(
+                text = stringResource(R.string.resign_description),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
     Button(
         onClick = onDownload,

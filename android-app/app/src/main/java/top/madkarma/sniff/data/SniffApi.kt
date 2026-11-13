@@ -4,8 +4,12 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
+import top.madkarma.sniff.BuildConfig
+import java.util.concurrent.TimeUnit
 
 const val API_ROOT = "https://sniff.madkarma.top/v2"
+
+private const val API_CALL_TIMEOUT_SECONDS = 120L
 
 private val UNSAFE_FILENAME_CHARACTERS = Regex("[^A-Za-z0-9._-]")
 private const val MAX_FILENAME_LENGTH = 160
@@ -16,10 +20,14 @@ internal class SniffApi(private val client: OkHttpClient) {
             API_ROOT.toHttpUrl().newBuilder().addPathSegment("download").addPathSegment(packageId)
                 .addPathSegment(channel.apiName).build()
 
-        val request =
-            Request.Builder().url(endpoint).header("User-Agent", "Sniff-Android/1.0").build()
+        val request = Request.Builder().url(endpoint)
+            .header("User-Agent", "Sniff-Android/${BuildConfig.VERSION_NAME}").build()
 
-        val data = client.newCall(request).await().use { response ->
+        // The small JSON request gets an overall timeout; newBuilder shares the pool and interceptors.
+        val apiClient =
+            client.newBuilder().callTimeout(API_CALL_TIMEOUT_SECONDS, TimeUnit.SECONDS).build()
+
+        val data = apiClient.newCall(request).await().use { response ->
             val body = response.body.string()
             val json = runCatching { JSONObject(body) }.getOrNull()
 

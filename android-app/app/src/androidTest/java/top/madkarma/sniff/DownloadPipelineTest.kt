@@ -1,5 +1,6 @@
 package top.madkarma.sniff
 
+import androidx.core.content.pm.PackageInfoCompat
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.android.apksig.ApkVerifier
@@ -91,7 +92,9 @@ class DownloadPipelineTest {
 
     private val original get() = File(context.applicationInfo.sourceDir).readBytes()
     private val installedVersion
-        get() = context.packageManager.getPackageInfo(context.packageName, 0).longVersionCode
+        get() = PackageInfoCompat.getLongVersionCode(
+            context.packageManager.getPackageInfo(context.packageName, 0)
+        )
 
     /** API response describing this app as a standalone APK with expansion and dex files. */
     private fun standaloneResponse(versionCode: Long): String {

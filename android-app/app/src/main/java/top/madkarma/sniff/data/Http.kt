@@ -9,9 +9,10 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resumeWithException
 
+/** No overall call timeout: it would also cap streaming the body, killing large downloads on slow links. */
 internal fun createHttpClient(): OkHttpClient =
     OkHttpClient.Builder().connectTimeout(30, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS)
-        .callTimeout(10, TimeUnit.MINUTES).build()
+        .build()
 
 internal suspend fun Call.await(): Response = suspendCancellableCoroutine { continuation ->
     continuation.invokeOnCancellation { cancel() }
