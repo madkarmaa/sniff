@@ -3,6 +3,7 @@
 
 mod api_error;
 mod client_registry;
+mod download_merge;
 mod edge_cache;
 mod google_play_client;
 mod handlers;
@@ -10,6 +11,7 @@ mod openapi_schema;
 mod package_name;
 mod responses;
 mod serializable_types;
+mod session_cache;
 
 use api_error::ApiError;
 use client_registry::shared_registry;

@@ -3,7 +3,7 @@
 // definitions even though there is no `if let/else` in hand-written code.
 #![allow(clippy::option_if_let_else)]
 
-use crate::client_registry::TargetOutcome;
+use crate::download_merge::TargetOutcome;
 use serde::{Deserialize, Serialize};
 use utoipa::{OpenApi, ToSchema};
 

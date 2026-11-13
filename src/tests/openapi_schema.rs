@@ -1,5 +1,5 @@
 use super::{ApiDoc, ApiResponse, DownloadInfo, DownloadResponse, TargetReport};
-use crate::client_registry::{Target, TargetOutcome};
+use crate::download_merge::{Target, TargetOutcome};
 use crate::serializable_types::SerializableDetailsResponse;
 use googleplay_protobuf::{AppDetails, DetailsResponse, DocumentDetails, Item};
 use serde_json::{Value, json};
