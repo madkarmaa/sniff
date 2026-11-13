@@ -14,4 +14,26 @@
     <string name="save_apk">Save APK</string>
     <string name="share_apk">Share APK</string>
     <string name="save_zip">Save all files (ZIP)</string>
+    <string name="progress_fetching">Fetching package information…</string>
+    <string name="progress_downloading">Downloading %1$d/%2$d: %3$s\n%4$s</string>
+    <string name="progress_merging">Merging %1$d APK files…</string>
+    <string name="progress_merging_signing">Merging and signing %1$d APK files…</string>
+    <string name="status_ready">Ready · files downloaded: %1$d</string>
+    <string name="status_ready_cached">Ready · already up to date, using cached files</string>
+    <string name="status_cancelled">Cancelled. Any cached version was kept.</string>
+    <string name="status_saving">Saving…</string>
+    <string name="status_saved">Saved successfully.</string>
+    <string name="status_save_cancelled">Save cancelled.</string>
+    <string name="error_invalid_package">Enter a valid package ID or Google Play link, such as com.google.android.calculator</string>
+    <string name="error_download_failed">Download failed</string>
+    <string name="error_save_failed">Save failed</string>
+    <string name="error_cache_removed">The cached files were removed. Download the app again.</string>
+    <string name="error_open_destination">Could not open the destination file.</string>
+    <string name="error_offline">No internet connection or the server is unreachable.</string>
+    <string name="error_timeout">The connection timed out. Try again.</string>
+    <string name="error_secure_connection">A secure connection could not be established. Check your network connection and the date and time on this device.</string>
+    <string name="error_network">Network error: %1$s</string>
+    <string name="error_api_failed">API request failed (HTTP %1$d). Try again later.</string>
+    <string name="error_file_http">Download of %1$s failed (HTTP %2$d)</string>
+    <string name="error_file_incomplete">Incomplete download of %1$s</string>
 </resources>

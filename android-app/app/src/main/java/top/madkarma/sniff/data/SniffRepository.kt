@@ -10,6 +10,7 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import org.json.JSONArray
 import org.json.JSONObject
+import top.madkarma.sniff.R
 import top.madkarma.sniff.apk.ApkMerger
 import top.madkarma.sniff.util.formatBytes
 import java.io.File
@@ -40,13 +41,13 @@ class SniffRepository(
         packageId: String,
         channel: ReleaseChannel,
         resign: Boolean,
-        onProgress: (String) -> Unit,
+        onProgress: (UiText) -> Unit,
     ): DownloadResult = withContext(io) {
-        require(PACKAGE_ID_PATTERN.matches(packageId)) {
-            "Enter a valid package ID or Google Play link, such as com.google.android.calculator"
+        if (!PACKAGE_ID_PATTERN.matches(packageId)) {
+            throw AppException(uiText(R.string.error_invalid_package))
         }
 
-        onProgress("Fetching package information…")
+        onProgress(uiText(R.string.progress_fetching))
 
         val plan = api.fetchDownloadPlan(packageId, channel)
         val folder = File(root, packageId)
@@ -66,7 +67,7 @@ class SniffRepository(
         folder: File,
         cached: CachedDownload,
         resign: Boolean,
-        onProgress: (String) -> Unit,
+        onProgress: (UiText) -> Unit,
     ): DownloadResult {
         val output = apkFile(plan, folder)
         val previous = File(folder, cached.output)
@@ -104,7 +105,7 @@ class SniffRepository(
         channel: ReleaseChannel,
         folder: File,
         resign: Boolean,
-        onProgress: (String) -> Unit,
+        onProgress: (UiText) -> Unit,
     ): DownloadResult {
         // The new version is staged separately so a failed update keeps the cached one.
         val staging = createStagingFolder(plan.packageId)
@@ -168,7 +169,7 @@ class SniffRepository(
         File(folder, "${plan.packageId}_${plan.versionCode}.apk")
 
     private suspend fun downloadFiles(
-        plan: DownloadPlan, folder: File, onProgress: (String) -> Unit
+        plan: DownloadPlan, folder: File, onProgress: (UiText) -> Unit
     ) {
         plan.files.forEachIndexed { index, file ->
             currentCoroutineContext().ensureActive()
@@ -177,9 +178,12 @@ class SniffRepository(
             output.parentFile!!.mkdirs()
 
             downloader.download(file, output) { size, total ->
-                val totalText = if (total > 0) " / ${formatBytes(total)}" else ""
+                val sizeText =
+                    if (total > 0) "${formatBytes(size)} / ${formatBytes(total)}" else formatBytes(size)
                 onProgress(
-                    "Downloading ${index + 1}/${plan.files.size}: ${file.label}\n${formatBytes(size)}$totalText"
+                    uiText(
+                        R.string.progress_downloading, index + 1, plan.files.size, file.label, sizeText
+                    )
                 )
             }
         }
@@ -189,14 +193,14 @@ class SniffRepository(
         plan: DownloadPlan,
         folder: File,
         resign: Boolean,
-        onProgress: (String) -> Unit,
+        onProgress: (UiText) -> Unit,
         output: File = apkFile(plan, folder),
     ): File {
         currentCoroutineContext().ensureActive()
 
         if (plan.hasSplits) {
-            val action = if (resign) " and signing…" else "…"
-            onProgress("Merging ${plan.splitCount + 1} APKs$action")
+            val message = if (resign) R.string.progress_merging_signing else R.string.progress_merging
+            onProgress(uiText(message, plan.splitCount + 1))
             ApkMerger.merge(File(folder, "apks"), output, plan.packageId, plan.versionCode, resign)
         } else {
             copyOriginalApk(File(folder, "apks/base.apk"), output, plan)

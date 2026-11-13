@@ -3,6 +3,7 @@ package top.madkarma.sniff.data
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import top.madkarma.sniff.R
 import top.madkarma.sniff.util.copyWithCancellation
 import java.io.File
 
@@ -16,7 +17,9 @@ internal class FileDownloader(private val client: OkHttpClient) {
         val request = Request.Builder().url(url).build()
 
         client.newCall(request).await().use { response ->
-            check(response.isSuccessful) { "Download of ${file.label} failed (HTTP ${response.code})" }
+            if (!response.isSuccessful) {
+                throw AppException(uiText(R.string.error_file_http, file.label, response.code))
+            }
 
             val body = response.body
             val total = body.contentLength()
@@ -33,8 +36,8 @@ internal class FileDownloader(private val client: OkHttpClient) {
                         }
                     }
 
-                    check(copied > 0 && (total < 0 || copied == total)) {
-                        "Incomplete download of ${file.label}"
+                    if (copied <= 0 || (total >= 0 && copied != total)) {
+                        throw AppException(uiText(R.string.error_file_incomplete, file.label))
                     }
 
                     onProgress(copied, total)

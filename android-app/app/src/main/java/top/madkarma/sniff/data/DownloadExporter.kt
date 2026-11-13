@@ -8,6 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import top.madkarma.sniff.R
 import top.madkarma.sniff.util.copyWithCancellation
 import java.io.OutputStream
 import java.util.zip.ZipEntry
@@ -20,8 +21,11 @@ class DownloadExporter(
     suspend fun save(uri: Uri, result: DownloadResult, format: ExportFormat): Unit =
         withContext(io) {
             try {
-                check(result.apk.isFile) { "The cached APK was removed. Download it again." }
-                checkNotNull(resolver.openOutputStream(uri)).use { output ->
+                if (!result.apk.isFile) throw AppException(uiText(R.string.error_cache_removed))
+
+                val stream = resolver.openOutputStream(uri)
+                    ?: throw AppException(uiText(R.string.error_open_destination))
+                stream.use { output ->
                     when (format) {
                         ExportFormat.APK -> result.apk.inputStream()
                             .use { it.copyWithCancellation(output) }

@@ -5,6 +5,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 import top.madkarma.sniff.BuildConfig
+import top.madkarma.sniff.R
 import java.util.concurrent.TimeUnit
 
 const val API_ROOT = "https://sniff.madkarma.top/v2"
@@ -31,9 +32,13 @@ internal class SniffApi(private val client: OkHttpClient) {
             val body = response.body.string()
             val json = runCatching { JSONObject(body) }.getOrNull()
 
-            check(response.isSuccessful && json?.optBoolean("success") == true) {
-                json?.optText("error")
-                    ?: "API request failed (HTTP ${response.code}). Try again later."
+            if (json == null || !response.isSuccessful || !json.optBoolean("success")) {
+                // The server's own message, when it sent one, is more precise than the status code.
+                val reason = json?.optText("error")
+                throw AppException(
+                    if (reason != null) UiText.Raw(reason)
+                    else uiText(R.string.error_api_failed, response.code)
+                )
             }
 
             json.getJSONObject("data")

@@ -1,5 +1,6 @@
 package top.madkarma.sniff
 
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -13,6 +14,9 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.ViewModelProvider
@@ -20,13 +24,24 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import top.madkarma.sniff.data.DownloadExporter
 import top.madkarma.sniff.data.SniffRepository
+import top.madkarma.sniff.data.packageInputFromSharedText
 import top.madkarma.sniff.ui.DownloadScreen
 import top.madkarma.sniff.ui.DownloadViewModel
+import top.madkarma.sniff.ui.IncomingInput
 
 class MainActivity : ComponentActivity() {
+    // Held by the activity, not the ViewModel: a recreated activity starts empty, so a rotation
+    // never applies the same shared text twice. The field itself survives through its saved state.
+    private var incoming by mutableStateOf<IncomingInput?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        // A restored activity already holds the earlier prefill; so does one reopened from recents.
+        val fromHistory = (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0
+        if (savedInstanceState == null && !fromHistory) receive(intent)
+        addOnNewIntentListener { receive(it) }
 
         val factory = viewModelFactory {
             initializer {
@@ -51,8 +66,20 @@ class MainActivity : ComponentActivity() {
                 lightColorScheme()
             }
             MaterialTheme(colorScheme = colorScheme) {
-                Surface(Modifier.fillMaxSize()) { DownloadScreen(model) }
+                Surface(Modifier.fillMaxSize()) { DownloadScreen(model, incoming) }
             }
         }
+    }
+
+    /** Prefills the package field from an app shared to Sniff or from a Google Play link. */
+    private fun receive(received: Intent) {
+        val text = when (received.action) {
+            Intent.ACTION_SEND -> received.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()
+            Intent.ACTION_VIEW -> received.dataString
+            else -> null
+        } ?: return
+
+        val input = packageInputFromSharedText(text)
+        if (input.isNotEmpty()) incoming = IncomingInput(input)
     }
 }

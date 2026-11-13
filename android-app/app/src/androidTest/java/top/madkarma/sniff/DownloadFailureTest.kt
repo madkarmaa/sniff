@@ -27,6 +27,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import top.madkarma.sniff.data.ReleaseChannel
 import top.madkarma.sniff.data.SniffRepository
+import top.madkarma.sniff.data.UiText
 import java.io.File
 
 @RunWith(AndroidJUnit4::class)
@@ -105,7 +106,9 @@ class DownloadFailureTest {
             SniffRepository(context, client).download(
                 context.packageName, ReleaseChannel.STABLE
             ) { progress ->
-                if (progress.startsWith("Downloading")) firstByte.complete(Unit)
+                if (progress is UiText.Resource && progress.id == R.string.progress_downloading) {
+                    firstByte.complete(Unit)
+                }
             }
             fail("Cancelled download must not return a result")
         }

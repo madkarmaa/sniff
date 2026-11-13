@@ -16,7 +16,7 @@ interface DownloadSource {
         packageId: String,
         channel: ReleaseChannel,
         resign: Boolean = false,
-        onProgress: (String) -> Unit,
+        onProgress: (UiText) -> Unit,
     ): DownloadResult
 }
 

@@ -17,6 +17,7 @@ import top.madkarma.sniff.data.DownloadExporter
 import top.madkarma.sniff.data.DownloadResult
 import top.madkarma.sniff.data.DownloadSource
 import top.madkarma.sniff.data.ReleaseChannel
+import top.madkarma.sniff.data.UiText
 import top.madkarma.sniff.ui.DownloadScreen
 import top.madkarma.sniff.ui.DownloadViewModel
 import java.io.File
@@ -43,7 +44,7 @@ class InteractiveUiTest {
                 packageId: String,
                 channel: ReleaseChannel,
                 resign: Boolean,
-                onProgress: (String) -> Unit
+                onProgress: (UiText) -> Unit
             ) = result
 
         }

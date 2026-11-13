@@ -10,16 +10,21 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import top.madkarma.sniff.R
 import top.madkarma.sniff.data.DownloadExporter
 import top.madkarma.sniff.data.DownloadResult
 import top.madkarma.sniff.data.DownloadSource
 import top.madkarma.sniff.data.ExportFormat
 import top.madkarma.sniff.data.ReleaseChannel
+import top.madkarma.sniff.data.UiText
 import top.madkarma.sniff.data.packageIdFromInput
+import top.madkarma.sniff.data.toDownloadError
+import top.madkarma.sniff.data.toSaveError
+import top.madkarma.sniff.data.uiText
 
 data class DownloadUiState(
     val busy: Boolean = false,
-    val message: String = "",
+    val message: UiText? = null,
     val error: Boolean = false,
     val result: DownloadResult? = null,
 )
@@ -44,21 +49,19 @@ class DownloadViewModel(
                     mutableState.update { it.copy(message = message) }
                 }
 
-                val summary = if (result.cached) {
-                    "already up to date, using cached files"
-                } else {
-                    "${result.fileCount} files downloaded"
-                }
-
-                mutableState.value = DownloadUiState(result = result, message = "Ready · $summary")
-            } catch (_: CancellationException) {
-                mutableState.value =
-                    DownloadUiState(message = "Cancelled. Any cached version was kept.")
-            } catch (error: Exception) {
                 mutableState.value = DownloadUiState(
-                    error = true,
-                    message = error.message ?: "Download failed",
+                    result = result,
+                    message = if (result.cached) {
+                        uiText(R.string.status_ready_cached)
+                    } else {
+                        uiText(R.string.status_ready, result.fileCount)
+                    },
                 )
+            } catch (_: CancellationException) {
+                mutableState.value = DownloadUiState(message = uiText(R.string.status_cancelled))
+            } catch (error: Exception) {
+                mutableState.value =
+                    DownloadUiState(error = true, message = error.toDownloadError())
             } finally {
                 mutableState.update { it.copy(busy = false) }
             }
@@ -69,10 +72,8 @@ class DownloadViewModel(
     fun isCached(result: DownloadResult): Boolean {
         if (result.apk.isFile) return true
 
-        mutableState.value = DownloadUiState(
-            error = true,
-            message = "The cached files were removed. Download the app again.",
-        )
+        mutableState.value =
+            DownloadUiState(error = true, message = uiText(R.string.error_cache_removed))
 
         return false
     }
@@ -83,22 +84,18 @@ class DownloadViewModel(
 
     fun export(uri: Uri, result: DownloadResult, format: ExportFormat) {
         if (state.value.busy) return
-        mutableState.update { it.copy(busy = true, error = false, message = "Saving…") }
+        mutableState.update {
+            it.copy(busy = true, error = false, message = uiText(R.string.status_saving))
+        }
 
         task = viewModelScope.launch {
             try {
                 exporter.save(uri, result, format)
-                mutableState.update { it.copy(message = "Saved successfully.") }
+                mutableState.update { it.copy(message = uiText(R.string.status_saved)) }
             } catch (_: CancellationException) {
-                mutableState.update {
-                    it.copy(message = "Save cancelled.")
-                }
+                mutableState.update { it.copy(message = uiText(R.string.status_save_cancelled)) }
             } catch (error: Exception) {
-                mutableState.update {
-                    it.copy(
-                        error = true, message = error.message ?: "Save failed"
-                    )
-                }
+                mutableState.update { it.copy(error = true, message = error.toSaveError()) }
             } finally {
                 mutableState.update { it.copy(busy = false) }
             }

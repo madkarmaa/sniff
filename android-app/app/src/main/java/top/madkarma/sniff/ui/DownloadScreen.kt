@@ -29,6 +29,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -49,12 +50,18 @@ import top.madkarma.sniff.R
 import top.madkarma.sniff.data.DownloadResult
 import top.madkarma.sniff.data.ExportFormat
 import top.madkarma.sniff.data.ReleaseChannel
+import top.madkarma.sniff.data.UiText
 import top.madkarma.sniff.util.formatBytes
 
+/** Text from outside the app for the package field; each instance is a separate event. */
+internal class IncomingInput(val text: String)
+
 @Composable
-internal fun DownloadScreen(model: DownloadViewModel) {
+internal fun DownloadScreen(model: DownloadViewModel, incoming: IncomingInput? = null) {
     val state by model.state.collectAsStateWithLifecycle()
     var packageId by rememberSaveable { mutableStateOf("") }
+    // Only prefills; the user starts the download.
+    LaunchedEffect(incoming) { if (incoming != null) packageId = incoming.text }
     var channel by rememberSaveable { mutableStateOf(ReleaseChannel.STABLE) }
     var resign by rememberSaveable { mutableStateOf(false) }
     var pendingExport by remember { mutableStateOf<DownloadResult?>(null) }
@@ -196,9 +203,9 @@ private fun DownloadStatus(state: DownloadUiState, onCancel: () -> Unit) {
         LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
         OutlinedButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) }
     }
-    if (state.message.isNotBlank()) {
+    state.message?.let { message ->
         Text(
-            text = state.message,
+            text = message.resolve(),
             color = if (state.error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
             style = MaterialTheme.typography.bodyLarge,
         )
@@ -233,6 +240,12 @@ private fun DownloadResultCard(
             ) { Text(stringResource(R.string.save_zip)) }
         }
     }
+}
+
+@Composable
+private fun UiText.resolve(): String = when (this) {
+    is UiText.Resource -> stringResource(id, *args.toTypedArray())
+    is UiText.Raw -> value
 }
 
 private fun ReleaseChannel.labelResource(): Int = when (this) {
