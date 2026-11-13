@@ -1,23 +1,38 @@
 use std::env;
+use std::process::ExitCode;
 
 use gpapi::Gpapi;
 
+const USAGE: &str = "usage: oauth2aas <email> <oauth_token>";
+
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+async fn main() -> ExitCode {
     let args: Vec<String> = env::args().collect();
+    let (Some(email), Some(oauth2)) = (args.get(1), args.get(2)) else {
+        eprintln!("{USAGE}");
+        return ExitCode::from(2);
+    };
 
-    let email = args
-        .get(1)
-        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidInput, "missing email"))?;
-    let oauth2 = args.get(2).ok_or_else(|| {
-        std::io::Error::new(std::io::ErrorKind::InvalidInput, "missing oauth2 token")
-    })?;
+    match run(email, oauth2).await {
+        Ok(aas_token) => {
+            println!("{aas_token}");
+            ExitCode::SUCCESS
+        }
+        Err(err) => {
+            eprintln!("Error: {err}");
+            ExitCode::FAILURE
+        }
+    }
+}
 
-    let mut api = Gpapi::new("px_9_fold", email.as_str())?;
-    api.request_aas_token(oauth2.as_str()).await?;
+async fn run(
+    email: &str,
+    oauth2: &str,
+) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    let mut api = Gpapi::new("px_9_fold", email)?;
+    api.request_aas_token(oauth2).await?;
     let aas_token = api
         .get_aas_token()
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "missing aas token"))?;
-    println!("{aas_token}");
-    Ok(())
+    Ok(aas_token.to_owned())
 }

@@ -140,6 +140,38 @@ fn auth_reply_invalid_utf8_on_success_is_not_http_error() {
 }
 
 #[test]
+fn aas_request_sends_droidguard_placeholder() {
+    let req = AuthRequest::new("user@example.com", "oauth2_4/abc");
+    assert_eq!(
+        req.params.get("droidguard_results").map(String::as_str),
+        Some("null")
+    );
+    assert_eq!(req.params.get("add_account").map(String::as_str), Some("1"));
+    assert_eq!(req.params.get("service").map(String::as_str), Some("ac2dm"));
+}
+
+#[test]
+fn aas_token_is_taken_from_reply() {
+    let reply = parse_form_reply("Token=aas_et/xyz\nEmail=user@example.com\n");
+    assert_eq!(aas_token_from_reply(reply).unwrap(), "aas_et/xyz");
+}
+
+#[test]
+fn aas_reply_without_token_reports_googles_reason() {
+    let reply = parse_auth_reply(400, b"Error=MissingDroidguard\n").unwrap();
+    let err = aas_token_from_reply(reply).unwrap_err();
+    assert_eq!(err.to_string(), "authentication failed: MissingDroidguard");
+}
+
+#[test]
+fn aas_reply_without_token_or_reason_is_still_explained() {
+    let err = aas_token_from_reply(HashMap::new()).unwrap_err();
+    assert_eq!(err.to_string(), "authentication failed: no token in reply");
+    let err = aas_token_from_reply(parse_form_reply("Error=\n")).unwrap_err();
+    assert_eq!(err.to_string(), "authentication failed: no token in reply");
+}
+
+#[test]
 fn new_accepts_known_device() {
     assert!(Gpapi::new("px_9a", "user@example.com").is_ok());
 }

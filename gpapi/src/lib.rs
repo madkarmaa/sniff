@@ -237,11 +237,8 @@ impl Gpapi {
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
         let oauth_token: String = oauth_token.into();
         let auth_req = AuthRequest::new(&self.email, &oauth_token);
-        let mut resp = self.request_aas_token_helper(&auth_req).await?;
-        self.aas_token = Some(
-            resp.remove("token")
-                .ok_or_else(|| Box::new(GpapiError::new(GpapiErrorKind::Authentication)))?,
-        );
+        let resp = self.request_aas_token_helper(&auth_req).await?;
+        self.aas_token = Some(aas_token_from_reply(resp)?);
         Ok(())
     }
 
@@ -973,6 +970,23 @@ fn parse_auth_reply(
     }
 }
 
+/// Extracts the aas token from a parsed `auth` reply. A reply without one is
+/// reported with Google's own reason (e.g. `MissingDroidguard`); the message
+/// never contains the token or the account email.
+fn aas_token_from_reply(
+    mut reply: HashMap<String, String>,
+) -> Result<String, Box<dyn Error + Send + Sync>> {
+    reply.remove("token").ok_or_else(|| {
+        let google_error = reply
+            .get("error")
+            .filter(|error| !error.is_empty())
+            .map_or("no token in reply", String::as_str);
+        Box::<dyn Error + Send + Sync>::from(GpapiError::from(format!(
+            "authentication failed: {google_error}"
+        )))
+    })
+}
+
 fn parse_form_reply(data: &str) -> HashMap<String, String> {
     let mut form_resp = HashMap::new();
     for line in data.split_terminator('\n') {
@@ -1008,6 +1022,11 @@ impl AuthRequest {
             ("add_account", "1"),
             ("Token", oauth_token),
             ("callerSig", consts::defaults::DEFAULT_CALLER_SIG),
+            // Google rejects the exchange with `MissingDroidguard` without it; the value is not validated.
+            (
+                "droidguard_results",
+                consts::defaults::DEFAULT_DROIDGUARD_RESULTS,
+            ),
         ]
         .into_iter()
         .map(|(k, v)| (String::from(k), String::from(v)))

@@ -15,5 +15,7 @@ pub mod defaults {
     pub const DEFAULT_ANDROID_VENDING: &str = "com.google.android.gms";
     pub const DEFAULT_GOOGLE_PLAY_SERVICES_VERSION: &str = "19629032";
     pub const DEFAULT_SERVICE: &str = "ac2dm";
+    /// Placeholder for the `droidguard_results` form parameter of the token exchange.
+    pub const DEFAULT_DROIDGUARD_RESULTS: &str = "null";
     pub const DEFAULT_BASE_URL: &str = "https://android.clients.google.com";
 }
