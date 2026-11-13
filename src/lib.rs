@@ -44,7 +44,7 @@ fn scalar_html() -> String {
   </head>
   <body>
     <script id="api-reference" data-url="{API_PREFIX}/openapi.json"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.69.0"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.78.1"></script>
   </body>
 </html>"#
     )

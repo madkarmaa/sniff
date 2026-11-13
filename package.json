@@ -2,8 +2,8 @@
     "name": "sniff",
     "private": true,
     "devDependencies": {
-        "prettier": "3.9.8",
-        "wrangler": "4.134.0"
+        "prettier": "3.10.1",
+        "wrangler": "4.162.0"
     },
     "scripts": {
         "format": "prettier --write --ignore-unknown .",
