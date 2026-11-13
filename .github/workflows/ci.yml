@@ -1,0 +1,74 @@
+name: CI
+
+on:
+    pull_request:
+    push:
+        branches:
+            - '**'
+
+concurrency:
+    group: ci-${{ github.ref }}
+    cancel-in-progress: true
+
+permissions:
+    contents: read
+
+jobs:
+    rust:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v6
+
+            - name: Install Rust
+              uses: dtolnay/rust-toolchain@stable
+              with:
+                  targets: wasm32-unknown-unknown
+                  components: rustfmt, clippy
+
+            - name: Cache Rust
+              uses: Swatinem/rust-cache@v2
+
+            - name: Check formatting
+              run: cargo fmt --all -- --check
+
+            - name: Lint workspace
+              run: cargo clippy --all --locked -- -D warnings
+
+            - name: Lint Worker
+              run: cargo clippy -p sniff --target wasm32-unknown-unknown --locked -- -D warnings
+
+            - name: Test workspace
+              run: cargo test --workspace --locked
+
+    android:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v6
+
+            - name: Setup Java
+              uses: actions/setup-java@v5
+              with:
+                  distribution: temurin
+                  java-version: '21'
+
+            - name: Setup Android SDK
+              uses: android-actions/setup-android@v4
+              with:
+                  packages: 'platform-tools platforms;android-37.0 build-tools;36.0.0'
+                  log-accepted-android-sdk-licenses: false
+
+            - name: Setup Gradle
+              uses: gradle/actions/setup-gradle@v6
+
+            - name: Lint and build
+              run: ./android-app/gradlew -p android-app --no-daemon :app:lintDebug :app:assembleDebug :app:assembleAndroidTest
+
+            - name: Upload lint report
+              if: failure()
+              uses: actions/upload-artifact@v7
+              with:
+                  name: android-lint-report
+                  path: android-app/app/build/reports/
+                  if-no-files-found: ignore

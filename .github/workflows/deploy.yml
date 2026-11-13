@@ -30,6 +30,7 @@ jobs:
               uses: dtolnay/rust-toolchain@stable
               with:
                   targets: wasm32-unknown-unknown
+                  components: rustfmt, clippy
 
             - name: Cache Rust
               uses: Swatinem/rust-cache@v2
@@ -38,10 +39,19 @@ jobs:
               id: bun
               uses: oven-sh/setup-bun@v2
               with:
-                  bun-version: latest
+                  bun-version: '1.4.4'
 
             - name: Bun install
               run: bun install --frozen-lockfile
+
+            - name: Check formatting
+              run: cargo fmt --all -- --check
+
+            - name: Lint Worker
+              run: cargo clippy -p sniff --target wasm32-unknown-unknown --locked -- -D warnings
+
+            - name: Test workspace
+              run: cargo test --workspace --locked
 
             - name: Configure branch deployment
               env:

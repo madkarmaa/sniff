@@ -157,6 +157,17 @@ Error response:
 }
 ```
 
+## Android app
+
+`android-app/` is a companion app for the API. Enter a package ID or a Google Play
+link, choose a channel, and the app downloads every file through the API, merges the
+splits into a single APK (optionally re-signed), and lets you save or share the APK or
+a ZIP of all files.
+
+- Download: [GitHub Releases](https://github.com/madkarmaa/sniff/releases), tags `android-v*`
+- Requires Android 8.0 (API 26) or newer
+- Build: `./gradlew :app:assembleDebug` inside `android-app/` (needs JDK 17+ and the Android SDK)
+
 ## Build from source
 
 Prerequisites:
@@ -211,9 +222,14 @@ curl -fsSL -A "Mozilla/5.0" http://localhost:8787/v2/download/com.discord/stable
 ```bash
 cargo check --all
 cargo fmt --all -- --check
-cargo clippy --all -- -D warnings
-cargo clippy -p sniff --target wasm32-unknown-unknown -- -D warnings
+cargo clippy --all --locked -- -D warnings
+cargo clippy -p sniff --target wasm32-unknown-unknown --locked -- -D warnings
+cargo test --workspace --locked
 ```
+
+CI runs these, plus Android lint and a debug build, on every push and pull request.
+Pushes to `v*` branches run the format, Worker clippy, and test checks before
+deploying. `Cargo.lock` is committed, so builds use the locked dependency versions.
 
 ## Environment variables
 
