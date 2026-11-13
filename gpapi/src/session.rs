@@ -25,23 +25,45 @@ impl Gpapi {
                 .upload_device_config_token
                 .ok_or_else(|| Box::new(GpapiError::new(GpapiErrorKind::InvalidResponse)))?;
             self.device_config_token = Some(token);
-            self.request_auth_token().await?;
-            // `toc` accepts presented terms inline; retry once in case the
-            // acceptance only takes effect on the next call. Both calls are
-            // boxed: `toc` now contains the whole accept handshake and would
-            // otherwise blow past the future-size limit.
-            match Box::pin(self.toc()).await {
-                Err(e)
-                    if e.downcast_ref::<GpapiError>().is_some_and(|api_error| {
-                        matches!(api_error.kind(), GpapiErrorKind::TermsOfService)
-                    }) =>
-                {
-                    Box::pin(self.toc()).await
-                }
-                other => other,
-            }
+            self.authenticate().await
         } else {
             Err("No device config token".into())
+        }
+    }
+
+    /// Renew the session (auth token and DFE cookie) of the registered device,
+    /// without a check-in that would register another one. Without a
+    /// registered device this is a full [`Gpapi::login`].
+    ///
+    /// # Errors
+    ///
+    /// Returns the errors of [`Gpapi::login`].
+    pub async fn reauthenticate(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
+        if self.has_registered_device() {
+            self.authenticate().await
+        } else {
+            self.login().await
+        }
+    }
+
+    async fn authenticate(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
+        // A stale session must not leak into the requests that renew it.
+        self.auth_token = None;
+        self.dfe_cookie = None;
+        self.request_auth_token().await?;
+        // `toc` accepts presented terms inline; retry once in case the
+        // acceptance only takes effect on the next call. Both calls are
+        // boxed: `toc` now contains the whole accept handshake and would
+        // otherwise blow past the future-size limit.
+        match Box::pin(self.toc()).await {
+            Err(e)
+                if e.downcast_ref::<GpapiError>().is_some_and(|api_error| {
+                    matches!(api_error.kind(), GpapiErrorKind::TermsOfService)
+                }) =>
+            {
+                Box::pin(self.toc()).await
+            }
+            other => other,
         }
     }
 

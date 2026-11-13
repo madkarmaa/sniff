@@ -67,10 +67,12 @@ mod details;
 mod devices;
 pub mod error;
 mod headers;
+mod resume;
 mod session;
 mod transport;
 
 pub use delivery::{DownloadInfo, NamedDownload};
+pub use resume::SessionState;
 
 use googleplay_protobuf::{AndroidCheckinProto, DeviceConfigurationProto};
 use prost::Message;
