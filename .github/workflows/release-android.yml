@@ -27,7 +27,7 @@ jobs:
             ANDROID_BUILD_TOOLS: '36.0.0'
         steps:
             - name: Checkout version branch
-              uses: actions/checkout@v6
+              uses: actions/checkout@v7
               with:
                   ref: ${{ github.ref_name }}
                   fetch-depth: 0
@@ -77,7 +77,7 @@ jobs:
                   JS
 
             - name: Setup Java
-              uses: actions/setup-java@v5
+              uses: actions/setup-java@v6
               with:
                   distribution: temurin
                   java-version: '21'
