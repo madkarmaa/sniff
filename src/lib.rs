@@ -62,7 +62,7 @@ fn route_param(ctx: &RouteContext<AppState>, name: &str) -> Result<String> {
 fn redirect_to_docs(req: Request, _ctx: RouteContext<AppState>) -> Result<Response> {
     let mut url = req.url()?;
     url.set_path(&format!("{API_PREFIX}/docs"));
-    Response::redirect(url)
+    responses::redirect(&url)
 }
 
 #[allow(clippy::needless_pass_by_value)]

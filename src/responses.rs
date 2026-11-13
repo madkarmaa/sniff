@@ -4,7 +4,7 @@
 use crate::api_error::ApiError;
 use crate::openapi_schema::ApiResponse;
 use serde::Serialize;
-use worker::{Response, Result};
+use worker::{Response, Result, Url};
 
 pub const CACHE_CONTROL_NO_STORE: &str = "no-store";
 
@@ -58,6 +58,21 @@ pub fn text_ok(body: &str, content_type: &str, cache_control: &str) -> Result<Re
     let headers = response.headers();
     headers.set("Content-Type", content_type)?;
     headers.set("Cache-Control", cache_control)?;
+    Ok(response)
+}
+
+/// A 302 to `url`.
+///
+/// Not `Response::redirect`: that wraps JavaScript's `Response.redirect()`,
+/// whose headers are immutable, so `finalize` could not add the CORS headers
+/// and every redirect failed with a 500.
+///
+/// # Errors
+///
+/// Returns a worker error if the response cannot be built.
+pub fn redirect(url: &Url) -> Result<Response> {
+    let response = Response::empty()?.with_status(302);
+    response.headers().set("Location", url.as_str())?;
     Ok(response)
 }
 
