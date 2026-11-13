@@ -34,6 +34,8 @@ internal fun Throwable.toDownloadError(): UiText = when (this) {
 
 internal fun Throwable.toSaveError(): UiText = toUiText(R.string.error_save_failed)
 
+internal fun Throwable.toInstallError(): UiText = toUiText(R.string.error_install_failed)
+
 private fun Throwable.toUiText(@StringRes fallback: Int): UiText = when (this) {
     is AppException -> text
     else -> message?.let { UiText.Raw(it) } ?: uiText(fallback)

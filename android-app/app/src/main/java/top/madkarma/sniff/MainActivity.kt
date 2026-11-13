@@ -22,6 +22,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import top.madkarma.sniff.apk.SplitInstaller
 import top.madkarma.sniff.data.DownloadExporter
 import top.madkarma.sniff.data.SniffRepository
 import top.madkarma.sniff.data.packageInputFromSharedText
@@ -48,6 +49,7 @@ class MainActivity : ComponentActivity() {
                 DownloadViewModel(
                     repository = SniffRepository(applicationContext),
                     exporter = DownloadExporter(contentResolver),
+                    installer = SplitInstaller(applicationContext),
                 )
             }
         }

@@ -1,8 +1,10 @@
 package top.madkarma.sniff.ui
 
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -45,6 +47,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
+import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import top.madkarma.sniff.R
 import top.madkarma.sniff.data.DownloadResult
@@ -65,6 +68,7 @@ internal fun DownloadScreen(model: DownloadViewModel, incoming: IncomingInput? =
     var channel by rememberSaveable { mutableStateOf(ReleaseChannel.STABLE) }
     var resign by rememberSaveable { mutableStateOf(false) }
     var pendingExport by remember { mutableStateOf<DownloadResult?>(null) }
+    var pendingInstall by remember { mutableStateOf<DownloadResult?>(null) }
     val context = LocalContext.current
     val focus = LocalFocusManager.current
     val shareTitle = stringResource(R.string.share_apk)
@@ -72,6 +76,36 @@ internal fun DownloadScreen(model: DownloadViewModel, incoming: IncomingInput? =
     fun export(uri: Uri?, format: ExportFormat) {
         val result = pendingExport ?: state.result
         if (uri != null && result != null) model.export(uri, result, format)
+    }
+
+    // Returning from the settings screen resumes the install if the user allowed it there.
+    val allowInstalls = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        val result = pendingInstall ?: state.result
+        if (result != null && context.packageManager.canRequestPackageInstalls()) {
+            model.install(result)
+        }
+    }
+
+    fun install(result: DownloadResult) {
+        if (!model.isCached(result)) return
+
+        if (context.packageManager.canRequestPackageInstalls()) {
+            model.install(result)
+            return
+        }
+
+        pendingInstall = result
+        model.showInstallPermissionNeeded()
+        val settings = Intent(
+            Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, "package:${context.packageName}".toUri()
+        )
+        try {
+            allowInstalls.launch(settings)
+        } catch (_: ActivityNotFoundException) {
+            // The message above still tells the user where to look.
+        }
     }
 
     val saveApk = rememberLauncherForActivityResult(
@@ -110,6 +144,7 @@ internal fun DownloadScreen(model: DownloadViewModel, incoming: IncomingInput? =
             DownloadResultCard(
                 result = result,
                 enabled = !state.busy,
+                onInstall = { install(result) },
                 onExport = { format ->
                     if (model.isCached(result)) {
                         pendingExport = result
@@ -216,6 +251,7 @@ private fun DownloadStatus(state: DownloadUiState, onCancel: () -> Unit) {
 private fun DownloadResultCard(
     result: DownloadResult,
     enabled: Boolean,
+    onInstall: () -> Unit,
     onExport: (ExportFormat) -> Unit,
     onShare: () -> Unit,
 ) {
@@ -224,6 +260,19 @@ private fun DownloadResultCard(
             Text(result.title, style = MaterialTheme.typography.titleLarge)
             Text("${result.apk.name} · ${formatBytes(result.apk.length())}")
             Button(
+                onClick = onInstall,
+                enabled = enabled,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text(stringResource(R.string.install_apk)) }
+            // Only a merged APK differs from the installed files.
+            if (result.merged) {
+                Text(
+                    text = stringResource(R.string.install_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            OutlinedButton(
                 onClick = { onExport(ExportFormat.APK) },
                 enabled = enabled,
                 modifier = Modifier.fillMaxWidth(),

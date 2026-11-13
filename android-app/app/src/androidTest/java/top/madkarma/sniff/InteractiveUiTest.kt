@@ -13,6 +13,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import top.madkarma.sniff.apk.SplitInstaller
 import top.madkarma.sniff.data.DownloadExporter
 import top.madkarma.sniff.data.DownloadResult
 import top.madkarma.sniff.data.DownloadSource
@@ -48,7 +49,9 @@ class InteractiveUiTest {
             ) = result
 
         }
-        val model = DownloadViewModel(fake, DownloadExporter(context.contentResolver))
+        val model = DownloadViewModel(
+            fake, DownloadExporter(context.contentResolver), SplitInstaller(context)
+        )
         val ready = File(context.filesDir, "ui-test-ready")
         val finished = File(context.filesDir, "ui-test-finished")
         ready.delete()

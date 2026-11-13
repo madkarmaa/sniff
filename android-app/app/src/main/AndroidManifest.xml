@@ -2,6 +2,8 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Lets Sniff install the downloaded APKs after the user allows it in the system settings. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- allowBackup=false covers API 26-30; dataExtractionRules (API 31+) is kept for newer systems. -->
     <application
         android:allowBackup="false"
@@ -44,6 +46,10 @@
                 <data android:scheme="market" android:host="details" />
             </intent-filter>
         </activity>
+        <!-- Only the PendingIntent given to the PackageInstaller session reaches this receiver. -->
+        <receiver
+            android:name=".apk.InstallResultReceiver"
+            android:exported="false" />
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.files"
