@@ -14,11 +14,13 @@ class ServerSettings(context: Context) {
     private val preferences = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
 
     var serverUrl: String
-        get() = preferences.getString(SERVER_URL_KEY, null)?.let(::normalizeServerUrl)
-            ?: DEFAULT_SERVER_URL
+        get() =
+            preferences.getString(SERVER_URL_KEY, null)?.let(::normalizeServerUrl)
+                ?: DEFAULT_SERVER_URL
         set(value) = preferences.edit {
-            // Storing nothing for the default lets a future default reach users who never changed it.
-            if (value == DEFAULT_SERVER_URL) remove(SERVER_URL_KEY) else putString(SERVER_URL_KEY, value)
+            // Not storing the default lets a new default reach users who never changed it.
+            if (value == DEFAULT_SERVER_URL) remove(SERVER_URL_KEY)
+            else putString(SERVER_URL_KEY, value)
         }
 }
 

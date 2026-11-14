@@ -12,7 +12,11 @@ private val SIGNATURE_EXTENSIONS = listOf(".SF", ".RSA", ".DSA", ".EC")
 /** Resource, DEX, and manifest merging follows APKEditor's m command. */
 internal object ApkMerger {
     fun merge(
-        input: File, output: File, packageId: String, versionCode: Long, resign: Boolean = false
+        input: File,
+        output: File,
+        packageId: String,
+        versionCode: Long,
+        resign: Boolean = false,
     ) {
         BaseApkBundle().use { bundle ->
             bundle.loadApkDirectory(input, false)
@@ -46,7 +50,10 @@ internal object ApkMerger {
         // ARSCLib sanitizes split references; APKEditor removes this additional store metadata.
         module.androidManifest.listApplicationElementsByTag("meta-data").toList().forEach { node ->
             val name =
-                node.searchAttributeByResourceId(AndroidManifestBlock.ID_name)?.valueAsString.orEmpty()
+                node
+                    .searchAttributeByResourceId(AndroidManifestBlock.ID_name)
+                    ?.valueAsString
+                    .orEmpty()
 
             val value =
                 node.searchAttributeByResourceId(AndroidManifestBlock.ID_value)?.valueAsString
@@ -92,7 +99,8 @@ internal object ApkMerger {
     private fun writeAlignedApk(module: ApkModule, output: File) {
         val writer = module.createApkFileWriter(output)
         writer.zipAligner.setFileAlignment(
-            ZipAligner.PREDICATE_NATIVE_LIBS, NATIVE_LIBRARY_ALIGNMENT
+            ZipAligner.PREDICATE_NATIVE_LIBS,
+            NATIVE_LIBRARY_ALIGNMENT,
         )
         writer.write()
     }

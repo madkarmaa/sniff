@@ -36,9 +36,11 @@ internal fun DownloadResultCard(
             val missingAbis = result.failedAbis.filter { it in Build.SUPPORTED_ABIS }
             if (missingAbis.isNotEmpty()) {
                 Text(
-                    text = stringResource(
-                        R.string.note_partial_targets, missingAbis.joinToString(", ")
-                    ),
+                    text =
+                        stringResource(
+                            R.string.note_partial_targets,
+                            missingAbis.joinToString(", "),
+                        ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -47,7 +49,9 @@ internal fun DownloadResultCard(
                 onClick = onInstall,
                 enabled = enabled,
                 modifier = Modifier.fillMaxWidth(),
-            ) { Text(stringResource(R.string.install_apk)) }
+            ) {
+                Text(stringResource(R.string.install_apk))
+            }
             // Only a merged APK differs from the installed files.
             if (result.merged) {
                 Text(
@@ -60,17 +64,23 @@ internal fun DownloadResultCard(
                 onClick = { onExport(ExportFormat.APK) },
                 enabled = enabled,
                 modifier = Modifier.fillMaxWidth(),
-            ) { Text(stringResource(R.string.save_apk)) }
+            ) {
+                Text(stringResource(R.string.save_apk))
+            }
             OutlinedButton(
                 onClick = onShare,
                 enabled = enabled,
                 modifier = Modifier.fillMaxWidth(),
-            ) { Text(stringResource(R.string.share_apk)) }
+            ) {
+                Text(stringResource(R.string.share_apk))
+            }
             OutlinedButton(
                 onClick = { onExport(ExportFormat.ZIP) },
                 enabled = enabled,
                 modifier = Modifier.fillMaxWidth(),
-            ) { Text(stringResource(R.string.save_zip)) }
+            ) {
+                Text(stringResource(R.string.save_zip))
+            }
         }
     }
 }

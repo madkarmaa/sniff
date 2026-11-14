@@ -1,6 +1,9 @@
 package top.madkarma.sniff.data
 
 import android.content.Context
+import java.io.File
+import kotlin.io.path.createTempDirectory
+import kotlin.io.path.moveTo
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
@@ -8,9 +11,6 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import top.madkarma.sniff.R
-import java.io.File
-import kotlin.io.path.createTempDirectory
-import kotlin.io.path.moveTo
 
 private val PACKAGE_ID_PATTERN = Regex("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+")
 
@@ -30,24 +30,25 @@ class SniffRepository(
         channel: ReleaseChannel,
         resign: Boolean,
         onProgress: ProgressListener,
-    ): DownloadResult = withContext(io) {
-        if (!PACKAGE_ID_PATTERN.matches(packageId)) {
-            throw AppException(uiText(R.string.error_invalid_package))
+    ): DownloadResult =
+        withContext(io) {
+            if (!PACKAGE_ID_PATTERN.matches(packageId)) {
+                throw AppException(uiText(R.string.error_invalid_package))
+            }
+
+            onProgress(uiText(R.string.progress_fetching), null)
+
+            val plan = api.fetchDownloadPlan(packageId, channel)
+            val folder = File(root, packageId)
+            removeIncompleteFolders()
+
+            val cached = readCachedDownload(folder, plan)
+            if (cached != null) {
+                useCachedDownload(plan, channel, folder, cached, resign, onProgress)
+            } else {
+                downloadIntoCache(plan, channel, folder, resign, onProgress)
+            }
         }
-
-        onProgress(uiText(R.string.progress_fetching), null)
-
-        val plan = api.fetchDownloadPlan(packageId, channel)
-        val folder = File(root, packageId)
-        removeIncompleteFolders()
-
-        val cached = readCachedDownload(folder, plan)
-        if (cached != null) {
-            useCachedDownload(plan, channel, folder, cached, resign, onProgress)
-        } else {
-            downloadIntoCache(plan, channel, folder, resign, onProgress)
-        }
-    }
 
     private suspend fun useCachedDownload(
         plan: DownloadPlan,
@@ -129,7 +130,8 @@ class SniffRepository(
 
     /** Staging folders and folders from older app versions are never valid package IDs. */
     private fun removeIncompleteFolders() {
-        root.listFiles { file -> !PACKAGE_ID_PATTERN.matches(file.name) }
+        root
+            .listFiles { file -> !PACKAGE_ID_PATTERN.matches(file.name) }
             ?.forEach { it.deleteRecursively() }
     }
 

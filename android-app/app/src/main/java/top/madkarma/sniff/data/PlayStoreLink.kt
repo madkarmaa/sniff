@@ -13,14 +13,18 @@ fun packageIdFromInput(input: String): String {
     val text = input.trim()
     val uri = text.toUri()
 
-    val playLink = when (uri.scheme?.lowercase()) {
-        "http", "https" -> uri.host.equals(
-            "play.google.com", ignoreCase = true
-        ) && uri.path?.trimEnd('/') == "/store/apps/details"
+    val playLink =
+        when (uri.scheme?.lowercase()) {
+            "http",
+            "https" ->
+                uri.host.equals(
+                    "play.google.com",
+                    ignoreCase = true,
+                ) && uri.path?.trimEnd('/') == "/store/apps/details"
 
-        "market" -> uri.host == "details"
-        else -> false
-    }
+            "market" -> uri.host == "details"
+            else -> false
+        }
 
     return if (playLink) uri.getQueryParameter("id")?.trim() ?: text else text
 }

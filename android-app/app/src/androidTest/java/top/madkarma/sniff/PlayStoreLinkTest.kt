@@ -12,11 +12,12 @@ class PlayStoreLinkTest {
     @Test
     fun extractsPackageIdFromPlayLinks() {
         listOf(
-            "https://play.google.com/store/apps/details?id=com.discord&hl=en",
-            "  https://play.google.com/store/apps/details?hl=en&id=com.discord\n",
-            "http://play.google.com/store/apps/details/?id=com.discord",
-            "market://details?id=com.discord",
-        ).forEach { assertEquals(it, "com.discord", packageIdFromInput(it)) }
+                "https://play.google.com/store/apps/details?id=com.discord&hl=en",
+                "  https://play.google.com/store/apps/details?hl=en&id=com.discord\n",
+                "http://play.google.com/store/apps/details/?id=com.discord",
+                "market://details?id=com.discord",
+            )
+            .forEach { assertEquals(it, "com.discord", packageIdFromInput(it)) }
     }
 
     @Test
@@ -24,7 +25,7 @@ class PlayStoreLinkTest {
         assertEquals(
             "com.discord",
             packageInputFromSharedText(
-                "Check out Discord on Google Play\nhttps://play.google.com/store/apps/details?id=com.discord&hl=en."
+                "Check out Discord on Google Play\nhttps://play.google.com/store/apps/details?id=com.discord&hl=en.",
             ),
         )
         assertEquals("com.discord", packageInputFromSharedText("  com.discord \n"))

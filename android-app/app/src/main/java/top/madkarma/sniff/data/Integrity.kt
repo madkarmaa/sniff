@@ -1,11 +1,15 @@
 package top.madkarma.sniff.data
 
-import top.madkarma.sniff.R
 import java.security.MessageDigest
 import java.util.Base64
+import top.madkarma.sniff.R
 
 /** Outcome of comparing a downloaded file's digest with the hash the API reported. */
-internal enum class DigestCheck { MATCH, MISMATCH, SKIPPED }
+internal enum class DigestCheck {
+    MATCH,
+    MISMATCH,
+    SKIPPED,
+}
 
 /** The hash to verify a file against: the JCA algorithm name and the string the API reported. */
 internal class ExpectedHash(val algorithm: String, val reported: String)
@@ -18,16 +22,19 @@ internal fun RemoteFile.expectedHash(): ExpectedHash? =
  * Compares [actual] with [reported]. Google Play reports hashes as URL-safe Base64 without padding,
  * but standard Base64 or hex are accepted too, with or without padding and in either case. The
  * reported text is decoded in every encoding; one whose decoded length equals the digest length is
- * a candidate. No candidate means it cannot be this kind of hash, so the check is [DigestCheck.SKIPPED]
- * rather than failed. Hex (64 characters) and Base64 (43 or 44) never collide for a SHA-256.
+ * a candidate. No candidate means it cannot be this kind of hash, so the check is
+ * [DigestCheck.SKIPPED] rather than failed. Hex (64 characters) and Base64 (43 or 44) never collide
+ * for a SHA-256.
  */
 internal fun checkDigest(actual: ByteArray, reported: String): DigestCheck {
     val text = reported.trim()
-    val candidates = listOfNotNull(
-        decodeHex(text),
-        decodeBase64(text, Base64.getDecoder()),
-        decodeBase64(text, Base64.getUrlDecoder()),
-    ).filter { it.size == actual.size }
+    val candidates =
+        listOfNotNull(
+                decodeHex(text),
+                decodeBase64(text, Base64.getDecoder()),
+                decodeBase64(text, Base64.getUrlDecoder()),
+            )
+            .filter { it.size == actual.size }
 
     return when {
         candidates.isEmpty() -> DigestCheck.SKIPPED
@@ -38,7 +45,8 @@ internal fun checkDigest(actual: ByteArray, reported: String): DigestCheck {
 
 /**
  * Throws an [AppException] when a downloaded file of [byteCount] bytes does not match the size or
- * hash the API reported for it. [actualDigest] is the digest of the expected algorithm, if one was computed.
+ * hash the API reported for it. [actualDigest] is the digest of the expected algorithm, if one was
+ * computed.
  */
 internal fun verifyDownload(file: RemoteFile, byteCount: Long, actualDigest: ByteArray?) {
     if (file.size != null && file.size != byteCount) {
@@ -46,8 +54,10 @@ internal fun verifyDownload(file: RemoteFile, byteCount: Long, actualDigest: Byt
     }
 
     val expected = file.expectedHash()
-    if (expected != null && actualDigest != null &&
-        checkDigest(actualDigest, expected.reported) == DigestCheck.MISMATCH
+    if (
+        expected != null &&
+            actualDigest != null &&
+            checkDigest(actualDigest, expected.reported) == DigestCheck.MISMATCH
     ) {
         throw AppException(uiText(R.string.error_file_checksum, file.label))
     }

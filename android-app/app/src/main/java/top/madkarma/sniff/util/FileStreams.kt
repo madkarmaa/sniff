@@ -1,11 +1,11 @@
 package top.madkarma.sniff.util
 
+import java.io.InputStream
+import java.io.OutputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
-import java.io.InputStream
-import java.io.OutputStream
 
 private const val COPY_BUFFER_SIZE = 64 * 1024
 
@@ -20,9 +20,10 @@ internal suspend fun InputStream.copyWithCancellation(
     while (true) {
         currentCoroutineContext().ensureActive()
 
-        val length = withContext(Dispatchers.IO) {
-            read(buffer)
-        }
+        val length =
+            withContext(Dispatchers.IO) {
+                read(buffer)
+            }
         if (length == -1) return copied
 
         withContext(Dispatchers.IO) {

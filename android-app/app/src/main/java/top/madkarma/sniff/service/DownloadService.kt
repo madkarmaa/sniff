@@ -53,7 +53,12 @@ class DownloadService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         // Must happen promptly after startForegroundService, even if the service stops right after.
         try {
-            ServiceCompat.startForeground(this, NOTIFICATION_ID, buildNotification(), foregroundType())
+            ServiceCompat.startForeground(
+                this,
+                NOTIFICATION_ID,
+                buildNotification(),
+                foregroundType(),
+            )
         } catch (_: IllegalStateException) {
             stopSelf()
             return START_NOT_STICKY
@@ -101,12 +106,17 @@ class DownloadService : Service() {
                 CHANNEL_ID,
                 getString(R.string.notification_channel_name),
                 NotificationManager.IMPORTANCE_LOW,
-            )
+            ),
         )
 
-        val open = PendingIntentCompat.getActivity(
-            this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT, false
-        )
+        val open =
+            PendingIntentCompat.getActivity(
+                this,
+                0,
+                Intent(this, MainActivity::class.java),
+                PendingIntent.FLAG_UPDATE_CURRENT,
+                false,
+            )
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)

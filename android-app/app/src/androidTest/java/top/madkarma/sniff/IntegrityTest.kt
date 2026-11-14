@@ -1,6 +1,7 @@
 package top.madkarma.sniff
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import java.security.MessageDigest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Test
@@ -11,7 +12,6 @@ import top.madkarma.sniff.data.RemoteFile
 import top.madkarma.sniff.data.UiText
 import top.madkarma.sniff.data.checkDigest
 import top.madkarma.sniff.data.verifyDownload
-import java.security.MessageDigest
 
 @RunWith(AndroidJUnit4::class)
 class IntegrityTest {
@@ -24,37 +24,40 @@ class IntegrityTest {
     @Test
     fun acceptsHexAndBase64InAnyCaseAndPadding() {
         listOf(
-            hex,
-            hex.uppercase(),
-            " $hex\n",
-            base64,
-            base64.trimEnd('='),
-            base64Url,
-            base64Url + "=",
-        ).forEach { assertEquals(it, DigestCheck.MATCH, checkDigest(digest, it)) }
+                hex,
+                hex.uppercase(),
+                " $hex\n",
+                base64,
+                base64.trimEnd('='),
+                base64Url,
+                base64Url + "=",
+            )
+            .forEach { assertEquals(it, DigestCheck.MATCH, checkDigest(digest, it)) }
     }
 
     @Test
     fun skipsTextThatCannotBeThisDigest() {
         listOf(
-            "",
-            "not a hash!",
-            "zz",
-            // A SHA-1 or a truncated hash is not a SHA-256.
-            "a9993e364706816aba3e25717850c26c9cd0d89d",
-            hex.dropLast(2),
-            base64Url.dropLast(4),
-        ).forEach { assertEquals(it, DigestCheck.SKIPPED, checkDigest(digest, it)) }
+                "",
+                "not a hash!",
+                "zz",
+                // A SHA-1 or a truncated hash is not a SHA-256.
+                "a9993e364706816aba3e25717850c26c9cd0d89d",
+                hex.dropLast(2),
+                base64Url.dropLast(4),
+            )
+            .forEach { assertEquals(it, DigestCheck.SKIPPED, checkDigest(digest, it)) }
     }
 
     @Test
     fun rejectsAWrongDigestInEveryEncoding() {
         val wrong = MessageDigest.getInstance("SHA-256").digest("abd".toByteArray())
         listOf(
-            hex.replaceRange(0, 2, "bb"),
-            base64.replaceRange(0, 1, "v"),
-            base64Url.replaceRange(0, 1, "v"),
-        ).forEach { assertEquals(it, DigestCheck.MISMATCH, checkDigest(digest, it)) }
+                hex.replaceRange(0, 2, "bb"),
+                base64.replaceRange(0, 1, "v"),
+                base64Url.replaceRange(0, 1, "v"),
+            )
+            .forEach { assertEquals(it, DigestCheck.MISMATCH, checkDigest(digest, it)) }
         assertEquals(DigestCheck.MISMATCH, checkDigest(wrong, hex))
     }
 
@@ -81,10 +84,12 @@ class IntegrityTest {
     fun sha1IsOnlyUsedWithoutSha256() {
         val sha1 = MessageDigest.getInstance("SHA-1").digest("abc".toByteArray())
         val both = RemoteFile("a.apk", "u", "a.apk", sha1 = "0".repeat(40), sha256 = hex)
-        // A wrong SHA-1 is ignored because the SHA-256 is given; the digest passed is that of SHA-256.
+        // A wrong SHA-1 is ignored because the SHA-256 is given; the digest passed is that of
+        // SHA-256.
         verifyDownload(both, 3, digest)
 
-        val only = RemoteFile("a.apk", "u", "a.apk", sha1 = "a9993e364706816aba3e25717850c26c9cd0d89d")
+        val only =
+            RemoteFile("a.apk", "u", "a.apk", sha1 = "a9993e364706816aba3e25717850c26c9cd0d89d")
         verifyDownload(only, 3, sha1)
         val bad = only.copy(sha1 = "0".repeat(40))
         assertThrows(AppException::class.java) { verifyDownload(bad, 3, sha1) }

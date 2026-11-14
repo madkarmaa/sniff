@@ -72,9 +72,11 @@ private fun ServerDialog(
                     label = { Text(stringResource(R.string.server_url)) },
                     singleLine = true,
                     isError = serverUrl == null,
-                    supportingText = if (serverUrl != null) null else {
-                        { Text(stringResource(R.string.error_server_url, DEFAULT_SERVER_URL)) }
-                    },
+                    supportingText =
+                        if (serverUrl != null) null
+                        else {
+                            { Text(stringResource(R.string.error_server_url, DEFAULT_SERVER_URL)) }
+                        },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                     modifier = Modifier.fillMaxWidth(),
                 )

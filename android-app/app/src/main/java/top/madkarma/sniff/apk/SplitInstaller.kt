@@ -7,6 +7,7 @@ import android.content.IntentSender
 import android.content.pm.PackageInstaller
 import android.os.Build
 import androidx.core.app.PendingIntentCompat
+import java.io.File
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -15,7 +16,6 @@ import top.madkarma.sniff.data.AppException
 import top.madkarma.sniff.data.DownloadResult
 import top.madkarma.sniff.data.uiText
 import top.madkarma.sniff.util.copyWithCancellation
-import java.io.File
 
 private const val BASE_APK = "base.apk"
 private val KNOWN_ABIS =
@@ -34,10 +34,13 @@ private fun splitAbi(fileName: String, knownAbis: Set<String>): String? {
 
 /**
  * Picks the APK files to install from the file names of a download: everything except the native
- * library splits of ABIs other than the best one. The best ABI is the first of [supportedAbis]
- * (in the preference order of Build.SUPPORTED_ABIS) that has a split; without one, all ABI splits go.
+ * library splits of ABIs other than the best one. The best ABI is the first of [supportedAbis] (in
+ * the preference order of Build.SUPPORTED_ABIS) that has a split; without one, all ABI splits go.
  */
-internal fun selectInstallFiles(fileNames: List<String>, supportedAbis: List<String>): List<String> {
+internal fun selectInstallFiles(
+    fileNames: List<String>,
+    supportedAbis: List<String>,
+): List<String> {
     val preferred = supportedAbis.map { it.normalizedAbi() }
     val abiOf = fileNames.associateWith { splitAbi(it, KNOWN_ABIS + preferred) }
     val best = preferred.firstOrNull { it in abiOf.values }
@@ -66,9 +69,11 @@ class SplitInstaller(
         withContext(io) {
             val files = installFiles(result)
             val installer = context.packageManager.packageInstaller
-            val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
+            val params =
+                PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
 
-            // The folder is named after the package ID; the system rejects files of another package.
+            // The folder is named after the package ID; the system rejects files of another
+            // package.
             params.setAppPackageName(result.folder.name)
             params.setSize(files.sumOf { it.length() })
 
@@ -107,12 +112,19 @@ class SplitInstaller(
         }
     }
 
-    /** The system adds the status to the intent, so the PendingIntent has to be mutable (API 31+). */
+    /**
+     * The system adds the status to the intent, so the PendingIntent has to be mutable (API 31+).
+     */
     private fun statusReceiver(sessionId: Int): IntentSender {
         val intent = Intent(context, InstallResultReceiver::class.java)
-        val pending = PendingIntentCompat.getBroadcast(
-            context, sessionId, intent, PendingIntent.FLAG_UPDATE_CURRENT, true
-        )
+        val pending =
+            PendingIntentCompat.getBroadcast(
+                context,
+                sessionId,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT,
+                true,
+            )
         return checkNotNull(pending).intentSender
     }
 }

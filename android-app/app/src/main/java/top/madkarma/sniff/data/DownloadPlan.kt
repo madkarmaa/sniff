@@ -9,7 +9,8 @@ internal data class DownloadPlan(
     /** ABIs the server could not fetch; the merged APK may lack native code for them. */
     val failedAbis: List<String> = emptyList(),
 ) {
-    val hasSplits: Boolean get() = splitCount > 0
+    val hasSplits: Boolean
+        get() = splitCount > 0
 }
 
 /** A file to download. [size] and the hashes are only known from API v3 on and are optional. */

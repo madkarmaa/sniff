@@ -10,10 +10,12 @@ import top.madkarma.sniff.data.uiText
 
 /** The final result of an install session, as reported by the system. */
 internal data class InstallOutcome(val sessionId: Int, val status: Int, val text: UiText) {
-    val success: Boolean get() = status == PackageInstaller.STATUS_SUCCESS
+    val success: Boolean
+        get() = status == PackageInstaller.STATUS_SUCCESS
 
     /** A cancel by the user is not an error. */
-    val error: Boolean get() = !success && status != PackageInstaller.STATUS_FAILURE_ABORTED
+    val error: Boolean
+        get() = !success && status != PackageInstaller.STATUS_FAILURE_ABORTED
 }
 
 /**
@@ -36,17 +38,19 @@ internal object InstallEvents {
 }
 
 /** Maps a final [PackageInstaller] status to the message shown to the user. */
-internal fun installStatusText(status: Int, message: String?): UiText = when (status) {
-    PackageInstaller.STATUS_SUCCESS -> uiText(R.string.status_installed)
-    PackageInstaller.STATUS_FAILURE_ABORTED -> uiText(R.string.status_install_cancelled)
-    PackageInstaller.STATUS_FAILURE_BLOCKED -> uiText(R.string.error_install_blocked)
-    PackageInstaller.STATUS_FAILURE_CONFLICT -> uiText(R.string.error_install_conflict)
-    PackageInstaller.STATUS_FAILURE_INCOMPATIBLE -> uiText(R.string.error_install_incompatible)
-    PackageInstaller.STATUS_FAILURE_INVALID -> uiText(R.string.error_install_invalid)
-    PackageInstaller.STATUS_FAILURE_STORAGE -> uiText(R.string.error_install_storage)
-    else -> if (message.isNullOrBlank()) {
-        uiText(R.string.error_install_failed)
-    } else {
-        uiText(R.string.error_install_failed_detail, message)
+internal fun installStatusText(status: Int, message: String?): UiText =
+    when (status) {
+        PackageInstaller.STATUS_SUCCESS -> uiText(R.string.status_installed)
+        PackageInstaller.STATUS_FAILURE_ABORTED -> uiText(R.string.status_install_cancelled)
+        PackageInstaller.STATUS_FAILURE_BLOCKED -> uiText(R.string.error_install_blocked)
+        PackageInstaller.STATUS_FAILURE_CONFLICT -> uiText(R.string.error_install_conflict)
+        PackageInstaller.STATUS_FAILURE_INCOMPATIBLE -> uiText(R.string.error_install_incompatible)
+        PackageInstaller.STATUS_FAILURE_INVALID -> uiText(R.string.error_install_invalid)
+        PackageInstaller.STATUS_FAILURE_STORAGE -> uiText(R.string.error_install_storage)
+        else ->
+            if (message.isNullOrBlank()) {
+                uiText(R.string.error_install_failed)
+            } else {
+                uiText(R.string.error_install_failed_detail, message)
+            }
     }
-}

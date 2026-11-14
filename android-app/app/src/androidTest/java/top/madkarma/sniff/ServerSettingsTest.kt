@@ -19,7 +19,10 @@ import top.madkarma.sniff.data.normalizeServerUrl
 class ServerSettingsTest : PipelineTestBase() {
     @Test
     fun acceptsHttpsServerUrls() {
-        assertEquals("https://sniff.example.com", normalizeServerUrl(" https://sniff.example.com/ "))
+        assertEquals(
+            "https://sniff.example.com",
+            normalizeServerUrl(" https://sniff.example.com/ "),
+        )
         assertEquals("https://example.com/sniff", normalizeServerUrl("https://example.com/sniff/"))
         assertEquals("https://example.com:8443", normalizeServerUrl("HTTPS://Example.com:8443"))
     }
@@ -27,23 +30,32 @@ class ServerSettingsTest : PipelineTestBase() {
     @Test
     fun rejectsUnusableServerUrls() {
         listOf(
-            "",
-            "sniff.example.com",
-            "http://sniff.example.com",
-            "ftp://sniff.example.com",
-            "https://sniff.example.com/?key=value",
-            "https://sniff.example.com/#docs",
-        ).forEach { assertNull(it, normalizeServerUrl(it)) }
+                "",
+                "sniff.example.com",
+                "http://sniff.example.com",
+                "ftp://sniff.example.com",
+                "https://sniff.example.com/?key=value",
+                "https://sniff.example.com/#docs",
+            )
+            .forEach { assertNull(it, normalizeServerUrl(it)) }
     }
 
     @Test
     fun lookupsGoToTheConfiguredServer() = runBlocking {
         var requested: String? = null
-        val client = OkHttpClient.Builder().addInterceptor { chain ->
-            requested = chain.request().url.toString()
-            Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1).code(503)
-                .message("Fixture").body("{}".toResponseBody()).build()
-        }.build()
+        val client =
+            OkHttpClient.Builder()
+                .addInterceptor { chain ->
+                    requested = chain.request().url.toString()
+                    Response.Builder()
+                        .request(chain.request())
+                        .protocol(Protocol.HTTP_1_1)
+                        .code(503)
+                        .message("Fixture")
+                        .body("{}".toResponseBody())
+                        .build()
+                }
+                .build()
         val repository =
             SniffRepository(context, client, serverUrl = { "https://example.com/sniff" })
         try {
@@ -53,7 +65,8 @@ class ServerSettingsTest : PipelineTestBase() {
             // Only the request URL matters here.
         }
         assertEquals(
-            "https://example.com/sniff/v3/download/${context.packageName}/beta", requested
+            "https://example.com/sniff/v3/download/${context.packageName}/beta",
+            requested,
         )
     }
 }

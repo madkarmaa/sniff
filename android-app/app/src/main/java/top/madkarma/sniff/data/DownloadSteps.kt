@@ -1,12 +1,12 @@
 package top.madkarma.sniff.data
 
 import com.reandroid.apk.ApkModule
+import java.io.File
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import top.madkarma.sniff.R
 import top.madkarma.sniff.apk.ApkMerger
 import top.madkarma.sniff.util.formatBytes
-import java.io.File
 
 internal fun apkFile(plan: DownloadPlan, folder: File): File =
     File(folder, "${plan.packageId}_${plan.versionCode}.apk")
@@ -31,24 +31,31 @@ internal suspend fun downloadFiles(
         val laterSizes = plan.files.drop(index + 1).map { it.size }
         val laterTotal = if (null in laterSizes) null else laterSizes.sumOf { it ?: 0L }
 
-        val downloaded = downloader.download(file, output) { received, contentLength ->
-            // The API size is exact; otherwise the response header is the best guess.
-            val expected = file.size ?: contentLength.takeIf { it > 0 }
-            val total =
-                if (expected != null && laterTotal != null) finished + expected + laterTotal else null
+        val downloaded =
+            downloader.download(file, output) { received, contentLength ->
+                // The API size is exact; otherwise the response header is the best guess.
+                val expected = file.size ?: contentLength.takeIf { it > 0 }
+                val total =
+                    if (expected != null && laterTotal != null) finished + expected + laterTotal
+                    else null
 
-            val sizeText = if (expected != null) {
-                "${formatBytes(received)} / ${formatBytes(expected)}"
-            } else {
-                formatBytes(received)
+                val sizeText =
+                    if (expected != null) {
+                        "${formatBytes(received)} / ${formatBytes(expected)}"
+                    } else {
+                        formatBytes(received)
+                    }
+                onProgress(
+                    uiText(
+                        R.string.progress_downloading,
+                        index + 1,
+                        plan.files.size,
+                        file.label,
+                        sizeText,
+                    ),
+                    total?.let { ((finished + received).toFloat() / it).coerceIn(0f, 1f) },
+                )
             }
-            onProgress(
-                uiText(
-                    R.string.progress_downloading, index + 1, plan.files.size, file.label, sizeText
-                ),
-                total?.let { ((finished + received).toFloat() / it).coerceIn(0f, 1f) },
-            )
-        }
         finished += downloaded
     }
 }

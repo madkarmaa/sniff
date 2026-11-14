@@ -25,14 +25,17 @@ internal fun DownloadStatus(state: DownloadUiState, onCancel: () -> Unit) {
     state.message?.let { message ->
         Text(
             text = message.resolve(),
-            color = if (state.error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+            color =
+                if (state.error) MaterialTheme.colorScheme.error
+                else MaterialTheme.colorScheme.onSurface,
             style = MaterialTheme.typography.bodyLarge,
         )
     }
 }
 
 @Composable
-private fun UiText.resolve(): String = when (this) {
-    is UiText.Resource -> stringResource(id, *args.toTypedArray())
-    is UiText.Raw -> value
-}
+private fun UiText.resolve(): String =
+    when (this) {
+        is UiText.Resource -> stringResource(id, *args.toTypedArray())
+        is UiText.Raw -> value
+    }

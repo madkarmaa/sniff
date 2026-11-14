@@ -13,7 +13,9 @@ data class DownloadResult(
     val failedAbis: List<String> = emptyList(),
 )
 
-/** Reports what is happening; [fraction] is the overall progress from 0 to 1, or null when unknown. */
+/**
+ * Reports what is happening; [fraction] is the overall progress from 0 to 1, or null when unknown.
+ */
 typealias ProgressListener = (message: UiText, fraction: Float?) -> Unit
 
 interface DownloadSource {
@@ -26,14 +28,18 @@ interface DownloadSource {
 }
 
 enum class ReleaseChannel(val apiName: String) {
-    STABLE("stable"), BETA("beta"), ALPHA("alpha"),
+    STABLE("stable"),
+    BETA("beta"),
+    ALPHA("alpha"),
 }
 
 enum class ExportFormat(val mimeType: String) {
-    APK("application/vnd.android.package-archive"), ZIP("application/zip");
+    APK("application/vnd.android.package-archive"),
+    ZIP("application/zip");
 
-    fun suggestedFileName(result: DownloadResult): String = when (this) {
-        APK -> result.apk.name
-        ZIP -> result.apk.name.removeSuffix(".apk") + "-files.zip"
-    }
+    fun suggestedFileName(result: DownloadResult): String =
+        when (this) {
+            APK -> result.apk.name
+            ZIP -> result.apk.name.removeSuffix(".apk") + "-files.zip"
+        }
 }

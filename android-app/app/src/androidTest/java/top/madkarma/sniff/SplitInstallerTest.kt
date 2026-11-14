@@ -15,22 +15,27 @@ class SplitInstallerTest {
     private fun split(index: Int, name: String) =
         "split-${index.toString().padStart(4, '0')}-$name.apk"
 
-    private val splits = listOf(
-        "base.apk",
-        split(0, "config.arm64_v8a"),
-        split(1, "config.armeabi_v7a"),
-        split(2, "config.x86"),
-        split(3, "config.x86_64"),
-        split(4, "config.en"),
-        split(5, "config.xxhdpi"),
-        split(6, "feature_video"),
-        split(7, "feature_video.config.arm64_v8a"),
-        split(8, "feature_video.config.x86_64"),
-    )
+    private val splits =
+        listOf(
+            "base.apk",
+            split(0, "config.arm64_v8a"),
+            split(1, "config.armeabi_v7a"),
+            split(2, "config.x86"),
+            split(3, "config.x86_64"),
+            split(4, "config.en"),
+            split(5, "config.xxhdpi"),
+            split(6, "feature_video"),
+            split(7, "feature_video.config.arm64_v8a"),
+            split(8, "feature_video.config.x86_64"),
+        )
 
-    private val shared = listOf(
-        "base.apk", split(4, "config.en"), split(5, "config.xxhdpi"), split(6, "feature_video")
-    )
+    private val shared =
+        listOf(
+            "base.apk",
+            split(4, "config.en"),
+            split(5, "config.xxhdpi"),
+            split(6, "feature_video"),
+        )
 
     /** The selection keeps the input order; only the files matter here. */
     private fun assertSelected(expected: List<String>, files: List<String>, abis: List<String>) =
@@ -39,7 +44,8 @@ class SplitInstallerTest {
     @Test
     fun keepsOnlyTheFirstSupportedAbi() {
         assertSelected(
-            shared + listOf(split(0, "config.arm64_v8a"), split(7, "feature_video.config.arm64_v8a")),
+            shared +
+                listOf(split(0, "config.arm64_v8a"), split(7, "feature_video.config.arm64_v8a")),
             splits,
             listOf("arm64-v8a", "armeabi-v7a", "armeabi"),
         )
@@ -75,15 +81,16 @@ class SplitInstallerTest {
 
     @Test
     fun mapsFailureStatusesToTheirOwnMessages() {
-        val statuses = listOf(
-            PackageInstaller.STATUS_FAILURE_ABORTED,
-            PackageInstaller.STATUS_FAILURE_BLOCKED,
-            PackageInstaller.STATUS_FAILURE_CONFLICT,
-            PackageInstaller.STATUS_FAILURE_INCOMPATIBLE,
-            PackageInstaller.STATUS_FAILURE_INVALID,
-            PackageInstaller.STATUS_FAILURE_STORAGE,
-            PackageInstaller.STATUS_FAILURE,
-        )
+        val statuses =
+            listOf(
+                PackageInstaller.STATUS_FAILURE_ABORTED,
+                PackageInstaller.STATUS_FAILURE_BLOCKED,
+                PackageInstaller.STATUS_FAILURE_CONFLICT,
+                PackageInstaller.STATUS_FAILURE_INCOMPATIBLE,
+                PackageInstaller.STATUS_FAILURE_INVALID,
+                PackageInstaller.STATUS_FAILURE_STORAGE,
+                PackageInstaller.STATUS_FAILURE,
+            )
         val messages = statuses.map { installStatusText(it, null) }
         assertEquals(statuses.size, messages.toSet().size)
 

@@ -49,8 +49,7 @@ class DownloadViewModel(
 
     // The session whose outcome is awaited. Set from the IO thread before the commit, so an
     // outcome that arrives right away is still recognized.
-    @Volatile
-    private var installSession = NO_SESSION
+    @Volatile private var installSession = NO_SESSION
     private var installHasExpansionFiles = false
 
     init {
@@ -69,18 +68,21 @@ class DownloadViewModel(
         task = launchWork {
             try {
                 val packageId = packageIdFromInput(input)
-                val result = repository.download(packageId, channel, resign) { message, fraction ->
-                    mutableState.update { it.copy(message = message, progress = fraction) }
-                }
+                val result =
+                    repository.download(packageId, channel, resign) { message, fraction ->
+                        mutableState.update { it.copy(message = message, progress = fraction) }
+                    }
 
-                mutableState.value = DownloadUiState(
-                    result = result,
-                    message = if (result.cached) {
-                        uiText(R.string.status_ready_cached)
-                    } else {
-                        uiText(R.string.status_ready, result.fileCount)
-                    },
-                )
+                mutableState.value =
+                    DownloadUiState(
+                        result = result,
+                        message =
+                            if (result.cached) {
+                                uiText(R.string.status_ready_cached)
+                            } else {
+                                uiText(R.string.status_ready, result.fileCount)
+                            },
+                    )
             } catch (_: CancellationException) {
                 mutableState.value = DownloadUiState(message = uiText(R.string.status_cancelled))
             } catch (error: Exception) {
@@ -108,7 +110,11 @@ class DownloadViewModel(
         if (installSession != NO_SESSION && task?.isActive != true) {
             installSession = NO_SESSION
             mutableState.update {
-                it.copy(busy = false, error = false, message = uiText(R.string.status_install_detached))
+                it.copy(
+                    busy = false,
+                    error = false,
+                    message = uiText(R.string.status_install_detached),
+                )
             }
         } else {
             task?.cancel()
@@ -164,11 +170,12 @@ class DownloadViewModel(
         if (!awaited && state.value.busy) return
 
         if (awaited) installSession = NO_SESSION
-        val text = if (awaited && outcome.success && installHasExpansionFiles) {
-            uiText(R.string.status_installed_obb)
-        } else {
-            outcome.text
-        }
+        val text =
+            if (awaited && outcome.success && installHasExpansionFiles) {
+                uiText(R.string.status_installed_obb)
+            } else {
+                outcome.text
+            }
         mutableState.update { it.copy(busy = false, error = outcome.error, message = text) }
     }
 
@@ -193,15 +200,17 @@ class DownloadViewModel(
     }
 
     /**
-     * Runs [block] as the current task. While it runs the process counts as busy, which keeps
-     * the foreground service alive, see [ActiveWork]. The install task ends once the session is committed,
-     * so waiting for the system dialog does not hold the service.
+     * Runs [block] as the current task. While it runs the process counts as busy, which keeps the
+     * foreground service alive, see [ActiveWork]. The install task ends once the session is
+     * committed, so waiting for the system dialog does not hold the service.
      */
     private fun launchWork(block: suspend () -> Unit): Job {
         ActiveWork.set(true)
-        return viewModelScope.launch { block() }.also {
-            it.invokeOnCompletion { ActiveWork.set(false) }
-        }
+        return viewModelScope
+            .launch { block() }
+            .also {
+                it.invokeOnCompletion { ActiveWork.set(false) }
+            }
     }
 
     override fun onCleared() {

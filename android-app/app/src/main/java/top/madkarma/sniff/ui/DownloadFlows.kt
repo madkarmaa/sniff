@@ -20,23 +20,27 @@ import top.madkarma.sniff.data.ExportFormat
 
 /**
  * Returns the request to make before the first download. It is asked once, and the download does
- * not wait for the answer. Without the permission the service still runs and only its
- * notification stays hidden.
+ * not wait for the answer. Without the permission the service still runs and only its notification
+ * stays hidden.
  */
 @Composable
 internal fun rememberNotificationRequest(): () -> Unit {
     val context = LocalContext.current
     var askedForNotifications by rememberSaveable { mutableStateOf(false) }
-    val askNotifications = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) {}
+    val askNotifications =
+        rememberLauncherForActivityResult(
+            ActivityResultContracts.RequestPermission(),
+        ) {}
 
     return {
         // Notification permission exists from Android 13 (API 33).
-        if (!askedForNotifications && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(
-                context, Manifest.permission.POST_NOTIFICATIONS
-            ) != PackageManager.PERMISSION_GRANTED
+        if (
+            !askedForNotifications &&
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.POST_NOTIFICATIONS,
+                ) != PackageManager.PERMISSION_GRANTED
         ) {
             askedForNotifications = true
             askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
@@ -45,8 +49,8 @@ internal fun rememberNotificationRequest(): () -> Unit {
 }
 
 /**
- * Returns the install action. It asks the user to allow installs from this app when that is
- * needed; [currentResult] reads the result shown right now.
+ * Returns the install action. It asks the user to allow installs from this app when that is needed;
+ * [currentResult] reads the result shown right now.
  */
 @Composable
 internal fun rememberInstallAction(
@@ -57,14 +61,15 @@ internal fun rememberInstallAction(
     var pendingInstall by remember { mutableStateOf<DownloadResult?>(null) }
 
     // Returning from the settings screen resumes the install if the user allowed it there.
-    val allowInstalls = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) {
-        val result = pendingInstall ?: currentResult()
-        if (result != null && context.packageManager.canRequestPackageInstalls()) {
-            model.install(result)
+    val allowInstalls =
+        rememberLauncherForActivityResult(
+            ActivityResultContracts.StartActivityForResult(),
+        ) {
+            val result = pendingInstall ?: currentResult()
+            if (result != null && context.packageManager.canRequestPackageInstalls()) {
+                model.install(result)
+            }
         }
-    }
 
     return install@{ result ->
         if (!model.isCached(result)) return@install
@@ -97,12 +102,18 @@ internal fun rememberExportAction(
         if (uri != null && result != null) model.export(uri, result, format)
     }
 
-    val saveApk = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument(ExportFormat.APK.mimeType)
-    ) { export(it, ExportFormat.APK) }
-    val saveZip = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument(ExportFormat.ZIP.mimeType)
-    ) { export(it, ExportFormat.ZIP) }
+    val saveApk =
+        rememberLauncherForActivityResult(
+            ActivityResultContracts.CreateDocument(ExportFormat.APK.mimeType),
+        ) {
+            export(it, ExportFormat.APK)
+        }
+    val saveZip =
+        rememberLauncherForActivityResult(
+            ActivityResultContracts.CreateDocument(ExportFormat.ZIP.mimeType),
+        ) {
+            export(it, ExportFormat.ZIP)
+        }
 
     return { result, format ->
         if (model.isCached(result)) {

@@ -44,16 +44,18 @@ internal fun DownloadForm(
         placeholder = { Text(stringResource(R.string.package_example)) },
         singleLine = true,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
-        trailingIcon = if (packageId.isEmpty()) null else {
-            {
-                IconButton(onClick = { onPackageIdChange("") }, enabled = enabled) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_clear),
-                        contentDescription = stringResource(R.string.clear),
-                    )
+        trailingIcon =
+            if (packageId.isEmpty()) null
+            else {
+                {
+                    IconButton(onClick = { onPackageIdChange("") }, enabled = enabled) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_clear),
+                            contentDescription = stringResource(R.string.clear),
+                        )
+                    }
                 }
-            }
-        },
+            },
         modifier = Modifier.fillMaxWidth(),
     )
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -67,14 +69,14 @@ internal fun DownloadForm(
         }
     }
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .toggleable(
-                value = resign,
-                enabled = enabled,
-                role = Role.Checkbox,
-                onValueChange = onResignChange,
-            ),
+        modifier =
+            Modifier.fillMaxWidth()
+                .toggleable(
+                    value = resign,
+                    enabled = enabled,
+                    role = Role.Checkbox,
+                    onValueChange = onResignChange,
+                ),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -92,11 +94,14 @@ internal fun DownloadForm(
         onClick = onDownload,
         enabled = enabled && packageId.isNotBlank(),
         modifier = Modifier.fillMaxWidth(),
-    ) { Text(stringResource(R.string.download_apk)) }
+    ) {
+        Text(stringResource(R.string.download_apk))
+    }
 }
 
-private fun ReleaseChannel.labelResource(): Int = when (this) {
-    ReleaseChannel.STABLE -> R.string.stable
-    ReleaseChannel.BETA -> R.string.beta
-    ReleaseChannel.ALPHA -> R.string.alpha
-}
+private fun ReleaseChannel.labelResource(): Int =
+    when (this) {
+        ReleaseChannel.STABLE -> R.string.stable
+        ReleaseChannel.BETA -> R.string.beta
+        ReleaseChannel.ALPHA -> R.string.alpha
+    }

@@ -18,9 +18,15 @@ private const val CERTIFICATE_EXPIRY_MILLIS = 4_102_444_800_000L
 
 internal object LocalApkSigner {
     fun sign(input: File, output: File) {
-        ApkSigner.Builder(listOf(signerConfig())).setInputApk(input).setOutputApk(output)
-            .setV1SigningEnabled(false).setV2SigningEnabled(true).setV3SigningEnabled(true)
-            .setV4SigningEnabled(false).build().sign()
+        ApkSigner.Builder(listOf(signerConfig()))
+            .setInputApk(input)
+            .setOutputApk(output)
+            .setV1SigningEnabled(false)
+            .setV2SigningEnabled(true)
+            .setV3SigningEnabled(true)
+            .setV4SigningEnabled(false)
+            .build()
+            .sign()
     }
 
     private fun signerConfig(): ApkSigner.SignerConfig {
@@ -31,20 +37,28 @@ internal object LocalApkSigner {
         val certificate = store.getCertificate(SIGNING_KEY_ALIAS) as X509Certificate
 
         return ApkSigner.SignerConfig.Builder(
-            "sniff", KeyConfig.Jca(privateKey), listOf(certificate)
-        ).build()
+                "sniff",
+                KeyConfig.Jca(privateKey),
+                listOf(certificate),
+            )
+            .build()
     }
 
     private fun createSigningKey() {
-        val parameters = KeyGenParameterSpec.Builder(
-            SIGNING_KEY_ALIAS,
-            KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY,
-        ).setKeySize(2048).setDigests(
-            KeyProperties.DIGEST_SHA256,
-            KeyProperties.DIGEST_SHA512,
-        ).setSignaturePaddings(KeyProperties.SIGNATURE_PADDING_RSA_PKCS1)
-            .setCertificateSubject(X500Principal("CN=Sniff"))
-            .setCertificateNotAfter(Date(CERTIFICATE_EXPIRY_MILLIS)).build()
+        val parameters =
+            KeyGenParameterSpec.Builder(
+                    SIGNING_KEY_ALIAS,
+                    KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY,
+                )
+                .setKeySize(2048)
+                .setDigests(
+                    KeyProperties.DIGEST_SHA256,
+                    KeyProperties.DIGEST_SHA512,
+                )
+                .setSignaturePaddings(KeyProperties.SIGNATURE_PADDING_RSA_PKCS1)
+                .setCertificateSubject(X500Principal("CN=Sniff"))
+                .setCertificateNotAfter(Date(CERTIFICATE_EXPIRY_MILLIS))
+                .build()
 
         KeyPairGenerator.getInstance(KeyProperties.KEY_ALGORITHM_RSA, KEYSTORE_PROVIDER).apply {
             initialize(parameters)

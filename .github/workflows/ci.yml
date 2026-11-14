@@ -62,6 +62,9 @@ jobs:
             - name: Setup Gradle
               uses: gradle/actions/setup-gradle@v6
 
+            - name: Check formatting
+              run: ./android-app/gradlew -p android-app --no-daemon spotlessCheck
+
             - name: Lint and build
               run: ./android-app/gradlew -p android-app --no-daemon :app:lintDebug :app:assembleDebug :app:assembleAndroidTest
 

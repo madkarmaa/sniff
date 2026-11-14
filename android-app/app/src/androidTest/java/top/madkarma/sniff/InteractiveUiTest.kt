@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import java.io.File
 import kotlinx.coroutines.cancel
 import org.json.JSONObject
 import org.junit.Assert.assertTrue
@@ -22,9 +23,10 @@ import top.madkarma.sniff.data.ReleaseChannel
 import top.madkarma.sniff.data.ServerSettings
 import top.madkarma.sniff.ui.DownloadScreen
 import top.madkarma.sniff.ui.DownloadViewModel
-import java.io.File
 
-/** Opt-in manual emulator harness: renders the PRODUCT screen with previously downloaded results. */
+/**
+ * Opt-in manual emulator harness: renders the PRODUCT screen with previously downloaded results.
+ */
 @RunWith(AndroidJUnit4::class)
 class InteractiveUiTest {
     @Test
@@ -33,26 +35,30 @@ class InteractiveUiTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val folder = File(File(context.filesDir, "last-test-result.txt").readText())
         val inventory = JSONObject(File(folder, "inventory.json").readText())
-        val result = DownloadResult(
-            File(folder, inventory.getString("output")),
-            folder,
-            inventory.getJSONArray("files").length(),
-            inventory.getBoolean("merged"),
-            inventory.getString("package")
-        )
+        val result =
+            DownloadResult(
+                File(folder, inventory.getString("output")),
+                folder,
+                inventory.getJSONArray("files").length(),
+                inventory.getBoolean("merged"),
+                inventory.getString("package"),
+            )
         assertTrue(result.apk.isFile)
-        val fake = object : DownloadSource {
-            override suspend fun download(
-                packageId: String,
-                channel: ReleaseChannel,
-                resign: Boolean,
-                onProgress: ProgressListener
-            ) = result
-
-        }
-        val model = DownloadViewModel(
-            fake, DownloadExporter(context.contentResolver), SplitInstaller(context)
-        )
+        val fake =
+            object : DownloadSource {
+                override suspend fun download(
+                    packageId: String,
+                    channel: ReleaseChannel,
+                    resign: Boolean,
+                    onProgress: ProgressListener,
+                ) = result
+            }
+        val model =
+            DownloadViewModel(
+                fake,
+                DownloadExporter(context.contentResolver),
+                SplitInstaller(context),
+            )
         val ready = File(context.filesDir, "ui-test-ready")
         val finished = File(context.filesDir, "ui-test-finished")
         ready.delete()
@@ -60,7 +66,9 @@ class InteractiveUiTest {
         try {
             ActivityScenario.launch(MainActivity::class.java).use { scenario ->
                 scenario.onActivity { activity ->
-                    activity.setContent { MaterialTheme { Surface { DownloadScreen(model, ServerSettings(context)) } } }
+                    activity.setContent {
+                        MaterialTheme { Surface { DownloadScreen(model, ServerSettings(context)) } }
+                    }
                     model.download(inventory.getString("package"), ReleaseChannel.STABLE)
                 }
                 val deadline = System.nanoTime() + 300_000_000_000L
@@ -69,7 +77,8 @@ class InteractiveUiTest {
                     Thread.sleep(250)
                 }
                 assertTrue(
-                    "Tester must create files/ui-test-finished within 5 minutes", finished.exists()
+                    "Tester must create files/ui-test-finished within 5 minutes",
+                    finished.exists(),
                 )
             }
         } finally {

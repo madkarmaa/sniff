@@ -1,6 +1,8 @@
 package top.madkarma.sniff
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import java.io.File
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import org.junit.Assert.assertArrayEquals
@@ -12,8 +14,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import top.madkarma.sniff.data.ReleaseChannel
 import top.madkarma.sniff.data.SniffRepository
-import java.io.File
-import java.util.concurrent.atomic.AtomicInteger
 
 @RunWith(AndroidJUnit4::class)
 class DownloadCacheTest : PipelineTestBase() {
@@ -47,7 +47,7 @@ class DownloadCacheTest : PipelineTestBase() {
             assertTrue(first.apk.renameTo(legacy))
             val inventory = File(first.folder, "inventory.json")
             inventory.writeText(
-                JSONObject(inventory.readText()).put("output", legacy.name).toString()
+                JSONObject(inventory.readText()).put("output", legacy.name).toString(),
             )
 
             val second = repository.download(context.packageName, ReleaseChannel.STABLE) { _, _ -> }
@@ -78,8 +78,10 @@ class DownloadCacheTest : PipelineTestBase() {
                 assertTrue(expected.message.orEmpty().contains("does not match"))
             }
             assertEquals(6, downloads.get())
-            val leftovers = cached.folder.parentFile!!.list()!!
-                .filter { it.startsWith("${context.packageName}-") }
+            val leftovers =
+                cached.folder.parentFile!!.list()!!.filter {
+                    it.startsWith("${context.packageName}-")
+                }
             assertEquals(emptyList<String>(), leftovers)
             assertTrue(cached.apk.isFile)
 

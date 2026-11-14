@@ -49,9 +49,11 @@ class MainActivity : ComponentActivity() {
         val factory = viewModelFactory {
             initializer {
                 DownloadViewModel(
-                    repository = SniffRepository(
-                        applicationContext, serverUrl = { serverSettings.serverUrl }
-                    ),
+                    repository =
+                        SniffRepository(
+                            applicationContext,
+                            serverUrl = { serverSettings.serverUrl },
+                        ),
                     exporter = DownloadExporter(contentResolver),
                     installer = SplitInstaller(applicationContext),
                 )
@@ -64,13 +66,14 @@ class MainActivity : ComponentActivity() {
             val dark = isSystemInDarkTheme()
             val context = LocalContext.current
             // Dynamic color needs Android 12 (API 31); older versions use the static schemes.
-            val colorScheme = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-            } else if (dark) {
-                darkColorScheme()
-            } else {
-                lightColorScheme()
-            }
+            val colorScheme =
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+                } else if (dark) {
+                    darkColorScheme()
+                } else {
+                    lightColorScheme()
+                }
             MaterialTheme(colorScheme = colorScheme) {
                 Surface(Modifier.fillMaxSize()) { DownloadScreen(model, serverSettings, incoming) }
             }
@@ -79,11 +82,12 @@ class MainActivity : ComponentActivity() {
 
     /** Prefills the package field from an app shared to Sniff or from a Google Play link. */
     private fun receive(received: Intent) {
-        val text = when (received.action) {
-            Intent.ACTION_SEND -> received.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()
-            Intent.ACTION_VIEW -> received.dataString
-            else -> null
-        } ?: return
+        val text =
+            when (received.action) {
+                Intent.ACTION_SEND -> received.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()
+                Intent.ACTION_VIEW -> received.dataString
+                else -> null
+            } ?: return
 
         val input = packageInputFromSharedText(text)
         if (input.isNotEmpty()) incoming = IncomingInput(input)
