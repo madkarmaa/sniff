@@ -26,16 +26,23 @@ thread_local! {
 /// How often a follower checks on the lookup it waits for.
 const FOLLOWER_CHECK_INTERVAL: Duration = Duration::from_millis(100);
 
-/// Look `package_name` up on `channel`, or wait for the lookup another
-/// request already started under `cache_key`.
+/// What a lookup fetches, as validated from the request.
+pub struct LookupRequest<'a> {
+    pub package_name: &'a str,
+    pub channel: Channel,
+    /// On-demand asset packs the client named, sorted and deduplicated.
+    pub asset_packs: &'a [String],
+}
+
+/// Look the request up, or wait for the lookup another request already
+/// started under `cache_key`.
 ///
 /// # Errors
 ///
 /// Returns a worker error if the response cannot be built.
 pub async fn respond(
     cache_key: String,
-    package_name: &str,
-    channel: Channel,
+    request: &LookupRequest<'_>,
     caller: &Caller,
     app: &AppState,
 ) -> Result<Response> {
@@ -54,7 +61,7 @@ pub async fn respond(
         if !rate_limit::allow(app.limiter.as_deref(), caller.address.as_deref()).await {
             return responses::error(&ApiError::too_many_requests());
         }
-        let outcome = look_up(app, package_name, channel).await;
+        let outcome = look_up(app, request).await;
         leader.finish(outcome.clone());
         return response_for(&outcome, Some((&app.ctx, cache_key)));
     }
@@ -72,16 +79,16 @@ async fn wait_for(follower: &Follower<SharedOutcome>) -> Option<SharedOutcome> {
     }
 }
 
-async fn look_up(app: &AppState, package_name: &str, channel: Channel) -> SharedOutcome {
+async fn look_up(app: &AppState, request: &LookupRequest<'_>) -> SharedOutcome {
     let lookup = app
         .registry
-        .get_download_info(package_name, channel)
+        .get_download_info(request.package_name, request.channel, request.asset_packs)
         .await?;
     let body = ApiResponse {
         success: true,
         data: Some(DownloadResponse {
             details: JsonDetails(lookup.details),
-            download: DownloadInfo::from(lookup.download),
+            download: DownloadInfo::new(lookup.download, &lookup.fast_follow_packs),
             targets: lookup.targets.iter().map(TargetReport::from).collect(),
         }),
         error: None,

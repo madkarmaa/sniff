@@ -4,7 +4,7 @@ use crate::google_play_client::{Channel, GooglePlayClient, UpstreamError};
 use crate::session_source::{Credentials, SessionSource, upstream_error};
 use futures_util::future::join_all;
 use googleplay_protobuf::DetailsResponse;
-use gpapi::DownloadInfo;
+use gpapi::{AppListing, DownloadInfo};
 use std::future::Future;
 use std::sync::Arc;
 use worker::{Env, console_error, console_log};
@@ -12,6 +12,8 @@ use worker::{Env, console_error, console_log};
 /// Everything a successful lookup reports.
 pub struct Lookup {
     pub details: DetailsResponse,
+    /// Names of the fast-follow asset packs; any other pack is on-demand.
+    pub fast_follow_packs: Vec<String>,
     pub download: DownloadInfo,
     /// One entry per download target, in `DOWNLOAD_TARGETS` order.
     pub targets: Vec<TargetOutcome>,
@@ -111,7 +113,9 @@ impl ClientRegistry {
     ///
     /// All download targets use the version advertised in the returned details.
     /// Beta and alpha lookups stop early when the app has no testing program
-    /// the channel's account is enrolled in.
+    /// the channel's account is enrolled in. Each target also asks for the
+    /// app's fast-follow asset packs and the on-demand ones in `asset_packs`,
+    /// in case a pack differs between devices.
     ///
     /// # Errors
     ///
@@ -122,18 +126,22 @@ impl ClientRegistry {
         &self,
         package_name: &str,
         channel: Channel,
+        asset_packs: &[String],
     ) -> Result<Lookup, ApiError> {
         let Some(device_name) = self.env_var("DEVICE_NAME") else {
             console_error!("DEVICE_NAME is not set");
             return Err(ApiError::misconfigured());
         };
-        let details = self
+        let AppListing {
+            details,
+            fast_follow_packs,
+        } = self
             .with_session(
                 channel,
                 &device_name,
                 &[],
                 Stage::Details,
-                |client| async move { client.get_details(package_name).await },
+                |client| async move { client.get_listing(package_name).await },
             )
             .await?
             .ok_or_else(|| ApiError::not_found(package_name))?;
@@ -154,6 +162,7 @@ impl ClientRegistry {
                 )
             })?;
 
+        let pack_names = &all_asset_packs(&fast_follow_packs, asset_packs);
         // Targets are fetched concurrently; `join_all` keeps their order, which
         // decides which target's main APK and dex metadata win the merge.
         // Boxed: each download future is ~90kB, too large to hold inline.
@@ -166,7 +175,7 @@ impl ClientRegistry {
                     Stage::Download,
                     |client| async move {
                         client
-                            .get_download_info(package_name, Some(version_code))
+                            .get_download_info(package_name, version_code, pack_names)
                             .await
                     },
                 )
@@ -178,10 +187,23 @@ impl ClientRegistry {
         let (download, targets) = collect_targets(&DOWNLOAD_TARGETS, results)?;
         Ok(Lookup {
             details,
+            fast_follow_packs,
             download,
             targets,
         })
     }
+}
+
+/// The fast-follow packs followed by the requested ones they do not include.
+fn all_asset_packs(fast_follow_packs: &[String], requested: &[String]) -> Vec<String> {
+    let mut names = fast_follow_packs.to_vec();
+    names.extend(
+        requested
+            .iter()
+            .filter(|name| !fast_follow_packs.contains(name))
+            .cloned(),
+    );
+    names
 }
 
 pub type SharedClientRegistry = Arc<ClientRegistry>;

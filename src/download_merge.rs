@@ -77,6 +77,7 @@ fn merge_download_infos(download_infos: Vec<DownloadInfo>) -> DownloadInfo {
     let mut merged = DownloadInfo::default();
     let mut split_names = HashSet::new();
     let mut additional_filenames = HashSet::new();
+    let mut asset_pack_slices = HashSet::new();
 
     for info in download_infos {
         // Size and hashes must come from the same info as the URL they describe.
@@ -98,6 +99,14 @@ fn merge_download_infos(download_infos: Vec<DownloadInfo>) -> DownloadInfo {
                 &mut additional_filenames,
                 file,
             );
+        }
+
+        // A pack can differ between devices, for example in its texture
+        // format, and then comes in differently named slices.
+        for file in info.asset_packs {
+            if asset_pack_slices.insert((file.pack_name.clone(), file.slice_id.clone())) {
+                merged.asset_packs.push(file);
+            }
         }
     }
 

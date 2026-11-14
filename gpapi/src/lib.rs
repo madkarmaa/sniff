@@ -58,6 +58,7 @@
 // On wasm, reqwest futures wrap JavaScript promises, which are never `Send`.
 #![cfg_attr(target_arch = "wasm32", allow(clippy::future_not_send))]
 
+mod asset_packs;
 mod auth;
 mod auth_token;
 mod checkin;
@@ -71,7 +72,9 @@ mod resume;
 mod session;
 mod transport;
 
+pub use asset_packs::AssetPackFile;
 pub use delivery::{DownloadInfo, NamedDownload};
+pub use details::AppListing;
 pub use resume::SessionState;
 
 use googleplay_protobuf::{AndroidCheckinProto, DeviceConfigurationProto};

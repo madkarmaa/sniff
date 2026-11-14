@@ -2,6 +2,8 @@
 #![allow(clippy::future_not_send)]
 
 mod api_error;
+mod asset_pack_names;
+mod asset_pack_schema;
 mod client_registry;
 mod download_merge;
 mod edge_cache;

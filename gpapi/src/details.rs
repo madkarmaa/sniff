@@ -1,9 +1,84 @@
 use crate::Gpapi;
 use crate::error::{Error as GpapiError, ErrorKind as GpapiErrorKind};
-use googleplay_protobuf::{BulkDetailsRequest, BulkDetailsResponse, DetailsResponse};
+use googleplay_protobuf::{
+    BulkDetailsRequest, BulkDetailsResponse, DetailsResponse, ResponseWrapper,
+};
 use prost::Message;
 use std::collections::HashMap;
 use std::error::Error;
+
+/// App details with what the public protobuf leaves out of them.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct AppListing {
+    pub details: DetailsResponse,
+    /// Names of the fast-follow asset packs of the listed version.
+    pub fast_follow_packs: Vec<String>,
+}
+
+/// The file type of a fast-follow asset pack in `AppDetails.file`.
+const FILE_TYPE_ASSET_PACK: i32 = 4;
+
+// The path from the response to `AppDetails.file`, which carries the pack
+// name in field 7. googleplay-protobuf's `FileMetadata` lacks that field.
+#[derive(Clone, PartialEq, Message)]
+struct ListingWrapper {
+    #[prost(message, optional, tag = "1")]
+    payload: Option<ListingPayload>,
+}
+
+#[derive(Clone, PartialEq, Message)]
+struct ListingPayload {
+    #[prost(message, optional, tag = "2")]
+    details_response: Option<ListingDetailsResponse>,
+}
+
+#[derive(Clone, PartialEq, Message)]
+struct ListingDetailsResponse {
+    #[prost(message, optional, tag = "4")]
+    item: Option<ListingItem>,
+}
+
+#[derive(Clone, PartialEq, Message)]
+struct ListingItem {
+    #[prost(message, optional, tag = "13")]
+    details: Option<ListingDocumentDetails>,
+}
+
+#[derive(Clone, PartialEq, Message)]
+struct ListingDocumentDetails {
+    #[prost(message, optional, tag = "1")]
+    app_details: Option<ListingAppDetails>,
+}
+
+#[derive(Clone, PartialEq, Message)]
+struct ListingAppDetails {
+    #[prost(message, repeated, tag = "17")]
+    files: Vec<ListingFile>,
+}
+
+#[derive(Clone, PartialEq, Message)]
+struct ListingFile {
+    #[prost(int32, optional, tag = "1")]
+    file_type: Option<i32>,
+    #[prost(string, optional, tag = "7")]
+    asset_pack_name: Option<String>,
+}
+
+fn fast_follow_packs(bytes: &[u8]) -> Result<Vec<String>, prost::DecodeError> {
+    let files = ListingWrapper::decode(bytes)?
+        .payload
+        .and_then(|payload| payload.details_response)
+        .and_then(|response| response.item)
+        .and_then(|item| item.details)
+        .and_then(|details| details.app_details)
+        .map(|app_details| app_details.files)
+        .unwrap_or_default();
+    Ok(files
+        .into_iter()
+        .filter(|file| file.file_type == Some(FILE_TYPE_ASSET_PACK))
+        .filter_map(|file| file.asset_pack_name)
+        .collect())
+}
 
 impl Gpapi {
     pub(super) async fn get_latest_version_for_pkg_name(
@@ -34,6 +109,18 @@ impl Gpapi {
         &self,
         pkg_name: S,
     ) -> Result<Option<DetailsResponse>, Box<dyn Error + Send + Sync>> {
+        Ok(self.listing(pkg_name).await?.map(|listing| listing.details))
+    }
+
+    /// Like `details`, and also reports the app's fast-follow asset packs.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if login is required or if the details request fails.
+    pub async fn listing<S: Into<String>>(
+        &self,
+        pkg_name: S,
+    ) -> Result<Option<AppListing>, Box<dyn Error + Send + Sync>> {
         if self.auth_token.is_none() {
             return Err(Box::new(GpapiError::new(GpapiErrorKind::LoginRequired)));
         }
@@ -42,11 +129,19 @@ impl Gpapi {
 
         let headers = self.get_default_headers()?;
 
-        let resp = self
-            .execute_request("details", Some(form_params), None, headers)
+        let bytes = self
+            .execute_request_helper("details", Some(form_params), None, headers, true)
             .await?;
-
-        Ok(resp.payload.and_then(|payload| payload.details_response))
+        let details = ResponseWrapper::decode(&*bytes)?
+            .payload
+            .and_then(|payload| payload.details_response);
+        let Some(details) = details else {
+            return Ok(None);
+        };
+        Ok(Some(AppListing {
+            details,
+            fast_follow_packs: fast_follow_packs(&bytes)?,
+        }))
     }
 
     /// Play Store bulk detail request for multiple apps.
@@ -86,3 +181,7 @@ impl Gpapi {
             .and_then(|payload| payload.bulk_details_response))
     }
 }
+
+#[cfg(test)]
+#[path = "tests/details.rs"]
+mod tests;

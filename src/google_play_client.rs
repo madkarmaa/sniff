@@ -1,6 +1,6 @@
 use crate::api_error::ApiError;
 use googleplay_protobuf::DetailsResponse;
-use gpapi::{DownloadInfo, Gpapi, SessionState};
+use gpapi::{AppListing, DownloadInfo, Gpapi, SessionState};
 use std::str::FromStr;
 use worker::console_error;
 
@@ -124,16 +124,17 @@ impl GooglePlayClient {
         self.client.restore_session(state);
     }
 
-    /// Fetch app details; `None` when Google Play does not know the app.
+    /// Fetch app details and fast-follow asset packs; `None` when Google
+    /// Play does not know the app.
     ///
     /// # Errors
     ///
     /// Returns the upstream error if the API request fails.
-    pub async fn get_details(
+    pub async fn get_listing(
         &self,
         package_name: &str,
-    ) -> Result<Option<DetailsResponse>, UpstreamError> {
-        match self.client.details(package_name).await {
+    ) -> Result<Option<AppListing>, UpstreamError> {
+        match self.client.listing(package_name).await {
             // The details endpoint answers 404 for unknown packages; before
             // gpapi reported HTTP errors that surfaced as an empty payload.
             Err(e) if gpapi::error::http_status(&*e) == Some(404) => Ok(None),
@@ -141,18 +142,33 @@ impl GooglePlayClient {
         }
     }
 
-    /// Fetch download info.
+    /// Fetch download info, with the named asset packs.
+    ///
+    /// The asset packs take one more upstream call, made only when there are
+    /// names to ask for.
     ///
     /// # Errors
     ///
-    /// Returns the upstream error if the API request fails.
+    /// Returns the upstream error if an API request fails.
     pub async fn get_download_info(
         &self,
         package_name: &str,
-        version_code: Option<i64>,
+        version_code: i64,
+        asset_packs: &[String],
     ) -> Result<DownloadInfo, UpstreamError> {
         // Boxed: the download future is ~90kB, too large to hold inline.
-        Box::pin(self.client.get_download_info(package_name, version_code)).await
+        let mut info = Box::pin(
+            self.client
+                .get_download_info(package_name, Some(version_code)),
+        )
+        .await?;
+        if !asset_packs.is_empty() {
+            info.asset_packs = self
+                .client
+                .get_asset_packs(package_name, version_code, asset_packs)
+                .await?;
+        }
+        Ok(info)
     }
 }
 

@@ -1,5 +1,6 @@
 use super::*;
 use crate::api_error::ErrorKind;
+use gpapi::AssetPackFile;
 
 fn named(name: &str, url: &str) -> NamedDownload {
     NamedDownload {
@@ -42,6 +43,7 @@ fn merge_keeps_first_urls_and_deduplicates_by_name() {
         ],
         additional_files: vec![named("main.1.app.obb", "arm64/obb")],
         dex_metadata_url: None,
+        asset_packs: vec![],
     };
     let second = DownloadInfo {
         main_apk_url: Some("armv7/base".into()),
@@ -54,6 +56,7 @@ fn merge_keeps_first_urls_and_deduplicates_by_name() {
         ],
         additional_files: vec![named("main.1.app.obb", "armv7/obb")],
         dex_metadata_url: Some("armv7/dm".into()),
+        asset_packs: vec![],
     };
     let merged = merge_download_infos(vec![first, second]);
     assert_eq!(merged.main_apk_url.as_deref(), Some("arm64/base"));
@@ -68,6 +71,40 @@ fn merge_keeps_first_urls_and_deduplicates_by_name() {
         .collect();
     assert_eq!(split_urls, ["arm64/abi", "arm64/en", "armv7/abi"]);
     assert_eq!(merged.additional_files.len(), 1);
+}
+
+fn pack_slice(pack_name: &str, slice_id: &str, url: &str) -> AssetPackFile {
+    AssetPackFile {
+        pack_name: pack_name.into(),
+        slice_id: Some(slice_id.into()),
+        download_url: Some(url.into()),
+        ..Default::default()
+    }
+}
+
+#[test]
+fn merge_keeps_each_asset_pack_slice_once() {
+    let first = DownloadInfo {
+        asset_packs: vec![
+            pack_slice("textures", "textures", "arm64/textures"),
+            pack_slice("textures", "textures.config.astc", "arm64/astc"),
+        ],
+        ..Default::default()
+    };
+    let second = DownloadInfo {
+        asset_packs: vec![
+            pack_slice("textures", "textures", "armv7/textures"),
+            pack_slice("textures", "textures.config.etc2", "armv7/etc2"),
+        ],
+        ..Default::default()
+    };
+    let merged = merge_download_infos(vec![first, second]);
+    let urls: Vec<_> = merged
+        .asset_packs
+        .iter()
+        .filter_map(|file| file.download_url.as_deref())
+        .collect();
+    assert_eq!(urls, ["arm64/textures", "arm64/astc", "armv7/etc2"]);
 }
 
 fn info(main: &str) -> DownloadInfo {

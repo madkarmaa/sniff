@@ -41,21 +41,24 @@ fn outcome(abi: &'static str, error: Option<&str>) -> TargetOutcome {
 fn download_response_preserves_metadata_and_downloads() -> Result<(), serde_json::Error> {
     let details = details();
     let metadata = serde_json::to_value(SerializableDetailsResponse(details.clone()))?;
-    let download = DownloadInfo::from(gpapi::DownloadInfo {
-        main_apk_url: Some("https://example.com/main.apk".into()),
-        splits: vec![gpapi::NamedDownload {
-            name: Some("config.arm64_v8a".into()),
-            download_url: Some("https://example.com/arm64.apk".into()),
+    let download = DownloadInfo::new(
+        gpapi::DownloadInfo {
+            main_apk_url: Some("https://example.com/main.apk".into()),
+            splits: vec![gpapi::NamedDownload {
+                name: Some("config.arm64_v8a".into()),
+                download_url: Some("https://example.com/arm64.apk".into()),
+                ..Default::default()
+            }],
+            additional_files: vec![gpapi::NamedDownload {
+                name: Some("main.123.com.example.obb".into()),
+                download_url: Some("https://example.com/main.obb".into()),
+                ..Default::default()
+            }],
+            dex_metadata_url: Some("https://example.com/main.dm".into()),
             ..Default::default()
-        }],
-        additional_files: vec![gpapi::NamedDownload {
-            name: Some("main.123.com.example.obb".into()),
-            download_url: Some("https://example.com/main.obb".into()),
-            ..Default::default()
-        }],
-        dex_metadata_url: Some("https://example.com/main.dm".into()),
-        ..Default::default()
-    });
+        },
+        &[],
+    );
     let urls = serde_json::to_value(&download)?;
     let response = serde_json::to_value(ApiResponse {
         success: true,
@@ -85,34 +88,38 @@ fn download_response_preserves_metadata_and_downloads() -> Result<(), serde_json
 
 #[test]
 fn download_info_serializes_sizes_and_hashes_as_reported() -> Result<(), serde_json::Error> {
-    let download = DownloadInfo::from(gpapi::DownloadInfo {
-        main_apk_url: Some("https://example.com/main.apk".into()),
-        main_apk_size: Some(12_345_678),
-        main_apk_sha1: Some("yq3dhkoGu0Ub1SEcMRMyuP-g5Ps".into()),
-        main_apk_sha256: Some("main-sha256".into()),
-        splits: vec![
-            gpapi::NamedDownload {
-                name: Some("config.en".into()),
-                download_url: Some("https://example.com/en.apk".into()),
-                size: Some(1024),
-                sha1: Some("split-sha1".into()),
-                sha256: Some("split-sha256".into()),
-            },
-            gpapi::NamedDownload {
-                name: Some("config.it".into()),
-                download_url: Some("https://example.com/it.apk".into()),
-                ..Default::default()
-            },
-        ],
-        additional_files: vec![gpapi::NamedDownload {
-            name: Some("main.1.com.example.obb".into()),
-            download_url: Some("https://example.com/main.obb".into()),
-            size: Some(52_428_800),
-            sha1: Some("obb-sha1".into()),
-            sha256: None,
-        }],
-        dex_metadata_url: None,
-    });
+    let download = DownloadInfo::new(
+        gpapi::DownloadInfo {
+            main_apk_url: Some("https://example.com/main.apk".into()),
+            main_apk_size: Some(12_345_678),
+            main_apk_sha1: Some("yq3dhkoGu0Ub1SEcMRMyuP-g5Ps".into()),
+            main_apk_sha256: Some("main-sha256".into()),
+            splits: vec![
+                gpapi::NamedDownload {
+                    name: Some("config.en".into()),
+                    download_url: Some("https://example.com/en.apk".into()),
+                    size: Some(1024),
+                    sha1: Some("split-sha1".into()),
+                    sha256: Some("split-sha256".into()),
+                },
+                gpapi::NamedDownload {
+                    name: Some("config.it".into()),
+                    download_url: Some("https://example.com/it.apk".into()),
+                    ..Default::default()
+                },
+            ],
+            additional_files: vec![gpapi::NamedDownload {
+                name: Some("main.1.com.example.obb".into()),
+                download_url: Some("https://example.com/main.obb".into()),
+                size: Some(52_428_800),
+                sha1: Some("obb-sha1".into()),
+                sha256: None,
+            }],
+            dex_metadata_url: None,
+            asset_packs: vec![],
+        },
+        &[],
+    );
     let json = serde_json::to_value(&download)?;
     assert_eq!(
         json,
@@ -146,7 +153,8 @@ fn download_info_serializes_sizes_and_hashes_as_reported() -> Result<(), serde_j
                 "sha1": "obb-sha1",
                 "sha256": null
             }],
-            "dex_metadata_url": null
+            "dex_metadata_url": null,
+            "asset_packs": []
         })
     );
     Ok(())
@@ -154,7 +162,7 @@ fn download_info_serializes_sizes_and_hashes_as_reported() -> Result<(), serde_j
 
 #[test]
 fn missing_main_apk_metadata_serializes_as_null() -> Result<(), serde_json::Error> {
-    let json = serde_json::to_value(DownloadInfo::from(gpapi::DownloadInfo::default()))?;
+    let json = serde_json::to_value(DownloadInfo::new(gpapi::DownloadInfo::default(), &[]))?;
     for field in [
         "main_apk_url",
         "main_apk_size",
@@ -195,7 +203,7 @@ fn target_reports_show_successes_and_failures() -> Result<(), serde_json::Error>
 fn download_response_carries_targets_next_to_the_downloads() -> Result<(), serde_json::Error> {
     let response = serde_json::to_value(DownloadResponse {
         details: SerializableDetailsResponse(details()),
-        download: DownloadInfo::from(gpapi::DownloadInfo::default()),
+        download: DownloadInfo::new(gpapi::DownloadInfo::default(), &[]),
         targets: vec![TargetReport::from(&outcome("x86_64", None))],
     })?;
     assert_eq!(response.pointer("/targets/0/abi"), Some(&json!("x86_64")));
@@ -233,7 +241,7 @@ fn openapi_exposes_only_latest_download_under_the_api_prefix() -> Result<(), ser
             .filter_map(|parameter| parameter.get("name").and_then(Value::as_str))
             .collect::<Vec<_>>()
     });
-    assert_eq!(names, Some(vec!["package_name", "channel"]));
+    assert_eq!(names, Some(vec!["package_name", "channel", "asset_packs"]));
     Ok(())
 }
 

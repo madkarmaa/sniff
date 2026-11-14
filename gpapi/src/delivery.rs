@@ -1,4 +1,5 @@
 use crate::Gpapi;
+use crate::asset_packs::AssetPackFile;
 use crate::error::{Error as GpapiError, ErrorKind as GpapiErrorKind};
 use std::collections::HashMap;
 use std::error::Error;
@@ -31,6 +32,9 @@ pub struct DownloadInfo {
     /// Expansion files, named `main.<version>.<package>.obb` or `patch.<version>.<package>.obb`.
     pub additional_files: Vec<NamedDownload>,
     pub dex_metadata_url: Option<String>,
+    /// Fast-follow and on-demand asset packs. The delivery flow leaves this
+    /// empty; `get_asset_packs` returns them.
+    pub asset_packs: Vec<AssetPackFile>,
 }
 
 impl Gpapi {
@@ -141,6 +145,7 @@ impl Gpapi {
                 dex_metadata_url: app_delivery_data
                     .dex_metadata
                     .and_then(|dex_metadata| dex_metadata.download_url),
+                asset_packs: Vec::new(),
             });
         }
         Err(Box::new(GpapiError::new(GpapiErrorKind::InvalidApp)))

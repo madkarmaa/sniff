@@ -3,6 +3,7 @@
 // definitions even though there is no `if let/else` in hand-written code.
 #![allow(clippy::option_if_let_else)]
 
+use crate::asset_pack_schema::{AssetPackFile, DeliveryMode, asset_pack_files};
 use crate::download_merge::TargetOutcome;
 use serde::{Deserialize, Serialize};
 use utoipa::{OpenApi, ToSchema};
@@ -21,6 +22,8 @@ use utoipa::{OpenApi, ToSchema};
             DownloadInfo,
             SplitFile,
             AdditionalFile,
+            AssetPackFile,
+            DeliveryMode,
             TargetReport,
             Item,
             DocumentDetails,
@@ -174,7 +177,8 @@ pub struct SerializableDetailsResponse {
         }
     ],
     "additional_files": [],
-    "dex_metadata_url": null
+    "dex_metadata_url": null,
+    "asset_packs": []
 }))]
 pub struct DownloadInfo {
     #[schema(example = "https://play.googleapis.com/download/by-token/download?token=AOTCm0Q...")]
@@ -191,6 +195,11 @@ pub struct DownloadInfo {
     pub splits: Vec<SplitFile>,
     pub additional_files: Vec<AdditionalFile>,
     pub dex_metadata_url: Option<String>,
+    /// The app's fast-follow asset packs, and the on-demand packs named in
+    /// the `asset_packs` query parameter that Google Play knows. These APKs
+    /// have no version code, so they cannot be installed as splits.
+    /// Install-time asset packs are in `splits`.
+    pub asset_packs: Vec<AssetPackFile>,
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
@@ -335,8 +344,11 @@ pub struct AppInfoContainer {
     pub description: Option<String>,
 }
 
-impl From<gpapi::DownloadInfo> for DownloadInfo {
-    fn from(info: gpapi::DownloadInfo) -> Self {
+impl DownloadInfo {
+    /// The response form of `info`. Asset packs not in `fast_follow_packs`
+    /// are on-demand.
+    #[must_use]
+    pub fn new(info: gpapi::DownloadInfo, fast_follow_packs: &[String]) -> Self {
         Self {
             main_apk_url: info.main_apk_url,
             main_apk_size: info.main_apk_size,
@@ -365,6 +377,7 @@ impl From<gpapi::DownloadInfo> for DownloadInfo {
                 })
                 .collect(),
             dex_metadata_url: info.dex_metadata_url,
+            asset_packs: asset_pack_files(info.asset_packs, fast_follow_packs),
         }
     }
 }

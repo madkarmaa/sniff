@@ -1,7 +1,7 @@
 //! Short-lived edge cache for lookups, via the Workers Cache API.
 //!
 //! One lookup costs about five upstream calls against the operator's Google
-//! accounts, so identical requests within a few seconds share one result.
+//! accounts (two more for an app with asset packs), so identical requests within a few seconds share one result.
 //! Successful lookups and "app not found" answers are cached; other errors
 //! are usually transient and are not.
 //! Every cache failure is logged and ignored: the Cache API is a no-op or
@@ -9,6 +9,7 @@
 //! never turn a good lookup into an error.
 
 use crate::API_PREFIX;
+use crate::asset_pack_names;
 use crate::google_play_client::Channel;
 use worker::{Cache, Context, Response, Url, console_error};
 
@@ -42,14 +43,24 @@ pub const fn ttl_secs(status: u16) -> Option<u64> {
 /// Canonical cache key for a download lookup.
 ///
 /// Built from the validated inputs rather than the raw request URL: the
-/// channel is lower-cased and the query string and fragment are dropped, so
-/// trivially different URLs share one entry. The package name is
-/// case-sensitive on Google Play and is kept as is.
+/// channel is lower-cased, the fragment is dropped and the query keeps only
+/// the asset packs (already sorted and deduplicated), so trivially different
+/// URLs share one entry. The package name is case-sensitive on Google Play and
+/// is kept as is.
 #[must_use]
-pub fn cache_key(request_url: &Url, package_name: &str, channel: Channel) -> String {
+pub fn cache_key(
+    request_url: &Url,
+    package_name: &str,
+    channel: Channel,
+    asset_packs: &[String],
+) -> String {
     let mut url = request_url.clone();
     url.set_path(&format!("{API_PREFIX}/download/{package_name}/{channel}"));
     url.set_query(None);
+    if !asset_packs.is_empty() {
+        url.query_pairs_mut()
+            .append_pair(asset_pack_names::QUERY_PARAMETER, &asset_packs.join(","));
+    }
     url.set_fragment(None);
     url.to_string()
 }

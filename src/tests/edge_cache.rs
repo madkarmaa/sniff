@@ -10,6 +10,7 @@ fn key(raw: &str, package_name: &str, channel: &str) -> Result<String, String> {
         &url(raw),
         package_name,
         Channel::from_str(channel)?,
+        &[],
     ))
 }
 
@@ -104,6 +105,30 @@ fn cache_key_is_built_from_inputs_not_the_request_path() -> Result<(), String> {
     )?;
     assert_eq!(canonical, odd);
     assert!(canonical.contains(crate::API_PREFIX));
+    Ok(())
+}
+
+#[test]
+fn cache_key_keeps_only_the_asset_packs_of_the_query() -> Result<(), String> {
+    let packs = ["krisp".to_string(), "voice".to_string()];
+    let with_packs = cache_key(
+        &url("https://example.test/v3/download/com.a.b/stable?utm=1&asset_packs=voice,krisp"),
+        "com.a.b",
+        Channel::from_str("stable")?,
+        &packs,
+    );
+    assert_eq!(
+        with_packs,
+        "https://example.test/v3/download/com.a.b/stable?asset_packs=krisp%2Cvoice"
+    );
+    assert_ne!(
+        with_packs,
+        key(
+            "https://example.test/v3/download/com.a.b/stable",
+            "com.a.b",
+            "stable"
+        )?
+    );
     Ok(())
 }
 

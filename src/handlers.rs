@@ -1,4 +1,5 @@
 use crate::api_error::ApiError;
+use crate::asset_pack_names::requested_asset_packs;
 use crate::client_registry::SharedClientRegistry;
 use crate::edge_cache;
 use crate::google_play_client::Channel;
@@ -35,7 +36,8 @@ pub struct Caller {
     path = "/v3/download/{package_name}/{channel}",
     params(
         ("package_name" = String, Path, description = "Android package name: dot-separated segments of letters, digits and underscores, each starting with a letter (at most 255 characters)", example = "com.discord"),
-        ("channel" = String, Path, description = "Release channel (case-insensitive)", example = "stable")
+        ("channel" = String, Path, description = "Release channel (case-insensitive)", example = "stable"),
+        ("asset_packs" = Option<String>, Query, description = "Comma-separated names of on-demand asset packs to include (at most 20; letters, digits and underscores). Google Play does not list these packs, so their names must come from the app itself. Names it does not know are left out of the response. Fast-follow packs are always included.", example = "krisp")
     ),
     responses(
         (status = 200, description = "Latest app details and download info retrieved successfully. Served from a 120-second edge cache; see X-Sniff-Cache. Check data.targets: a lookup where only some targets succeeded still returns 200.",
@@ -83,6 +85,17 @@ pub struct Caller {
                  ],
                  "additional_files": [],
                  "dex_metadata_url": null,
+                 "asset_packs": [
+                     {
+                         "name": "krisp",
+                         "slice_id": "krisp",
+                         "delivery_mode": "on_demand",
+                         "version_code": 289_020,
+                         "download_url": "https://play.googleapis.com/download/by-token/download?token=AOTCm0U...",
+                         "size": 12_202_642,
+                         "sha256": "bm90LWEtcmVhbC1hc3NldC1wYWNrLXNoYTI1Ni1kaWdlc3Q"
+                     }
+                 ],
                  "targets": [
                      { "abi": "arm64-v8a", "device": "px_9a", "success": true, "error": null },
                      { "abi": "armeabi-v7a", "device": "sm_a13_5g", "success": true, "error": null }
@@ -91,7 +104,7 @@ pub struct Caller {
              "error": null
          })
         ),
-        (status = 400, description = "Invalid channel, invalid package name, or channel not available for the package",
+        (status = 400, description = "Invalid channel, invalid package name, invalid or too many asset pack names, or channel not available for the package",
          body = ErrorResponse,
          example = json!({
              "success": false,
@@ -195,12 +208,22 @@ pub async fn get_download_info(
     if let Err(error) = validate_package_name(&package_name) {
         return responses::error(&error);
     }
+    let asset_packs = match requested_asset_packs(&caller.request_url) {
+        Ok(asset_packs) => asset_packs,
+        Err(error) => return responses::error(&error),
+    };
 
     // Keyed by the validated inputs, so a hit never reaches Google.
-    let cache_key = edge_cache::cache_key(&caller.request_url, &package_name, channel);
+    let cache_key =
+        edge_cache::cache_key(&caller.request_url, &package_name, channel, &asset_packs);
     if let Some(hit) = edge_cache::lookup(&cache_key).await {
         return Ok(hit);
     }
 
-    shared_lookup::respond(cache_key, &package_name, channel, &caller, &app).await
+    let request = shared_lookup::LookupRequest {
+        package_name: &package_name,
+        channel,
+        asset_packs: &asset_packs,
+    };
+    shared_lookup::respond(cache_key, &request, &caller, &app).await
 }
