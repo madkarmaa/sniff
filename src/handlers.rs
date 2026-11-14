@@ -124,7 +124,7 @@ pub struct Caller {
              "error": "App 'com.discord' not found"
          })
         ),
-        (status = 422, description = "The app exists but cannot be downloaded: Google Play refused the purchase or delivery for every download target, typically a paid app or one not available to the accounts and devices this service uses. The request is valid, hence 422 rather than 403.",
+        (status = 422, description = "The app exists but cannot be downloaded: Google Play reports it as restricted for the channel's account or refused the purchase or delivery for every download target, typically a paid app or one not available to the accounts and devices this service uses. The request is valid, hence 422 rather than 403.",
          body = ErrorResponse,
          example = json!({
              "success": false,

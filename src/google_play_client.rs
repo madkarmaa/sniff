@@ -60,6 +60,24 @@ impl Channel {
     }
 }
 
+/// Google Play's availability restriction for an app any account may get.
+const UNRESTRICTED: i32 = 1;
+
+/// The availability restriction Google Play reports in `details` for the
+/// account that fetched them, or `None` when the app is not restricted.
+///
+/// A restricted app is still listed, but its purchase fails (HTTP 400
+/// `DF-DFERH-01` for code 31), so checking first saves those calls.
+#[must_use]
+pub fn availability_restriction(details: &DetailsResponse) -> Option<i32> {
+    details
+        .item
+        .as_ref()
+        .and_then(|item| item.availability.as_ref())
+        .and_then(|availability| availability.restriction)
+        .filter(|&restriction| restriction != UNRESTRICTED)
+}
+
 #[derive(Clone)]
 pub struct GooglePlayClient {
     client: Gpapi,

@@ -22,10 +22,11 @@ pub enum ErrorKind {
     ChannelUnavailable,
     /// Google Play does not know the app (404).
     NotFound,
-    /// The app exists but cannot be downloaded: Google refused the purchase or
-    /// delivery, typically a paid app or one not offered to the accounts and
-    /// devices this service uses. The request itself is valid, so this is a
-    /// 422 rather than a 403 (which would suggest the caller lacks permission).
+    /// The app exists but cannot be downloaded: Google reports it as restricted
+    /// for the account or refuses the purchase or delivery, typically a paid
+    /// app or one not offered to the accounts and devices this service uses.
+    /// The request itself is valid, so this is a 422 rather than a 403 (which
+    /// would suggest the caller lacks permission).
     NotDownloadable,
     /// The requested channel's credentials are not set up on this deployment (501).
     NotConfigured,
@@ -101,6 +102,13 @@ impl ApiError {
         Self::new(
             ErrorKind::ChannelUnavailable,
             format!("Channel '{channel}' is not available for package '{package_name}'"),
+        )
+    }
+
+    pub fn not_downloadable() -> Self {
+        Self::new(
+            ErrorKind::NotDownloadable,
+            "This app cannot be downloaded: it may be paid or not available to the accounts and devices used by this service",
         )
     }
 
@@ -190,10 +198,7 @@ impl ApiError {
         let kind = err.downcast_ref::<GpapiError>().map(GpapiError::kind);
         match (kind, stage) {
             // The purchase/delivery flow answered without anything to download.
-            (Some(GpapiErrorKind::InvalidApp), Stage::Download) => Self::new(
-                ErrorKind::NotDownloadable,
-                "This app cannot be downloaded: it may be paid or not available to the accounts and devices used by this service",
-            ),
+            (Some(GpapiErrorKind::InvalidApp), Stage::Download) => Self::not_downloadable(),
             // Only a bug reaches this, since a login precedes every call.
             (Some(GpapiErrorKind::LoginRequired), _) => Self::internal(),
             (Some(GpapiErrorKind::Authentication), Stage::Login) => Self::new(

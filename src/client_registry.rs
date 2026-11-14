@@ -1,6 +1,8 @@
 use crate::api_error::{ApiError, ErrorKind, Stage};
 use crate::download_merge::{DOWNLOAD_TARGETS, TargetOutcome, collect_targets};
-use crate::google_play_client::{Channel, GooglePlayClient, UpstreamError};
+use crate::google_play_client::{
+    Channel, GooglePlayClient, UpstreamError, availability_restriction,
+};
 use crate::session_source::{Credentials, SessionSource, upstream_error};
 use futures_util::future::join_all;
 use googleplay_protobuf::DetailsResponse;
@@ -113,9 +115,10 @@ impl ClientRegistry {
     ///
     /// All download targets use the version advertised in the returned details.
     /// Beta and alpha lookups stop early when the app has no testing program
-    /// the channel's account is enrolled in. Each target also asks for the
-    /// app's fast-follow asset packs and the on-demand ones in `asset_packs`,
-    /// in case a pack differs between devices.
+    /// the channel's account is enrolled in, and every lookup stops early when
+    /// Google Play reports the app as restricted for the account. Each target
+    /// also asks for the app's fast-follow asset packs and the on-demand ones
+    /// in `asset_packs`, in case a pack differs between devices.
     ///
     /// # Errors
     ///
@@ -147,6 +150,12 @@ impl ClientRegistry {
             .ok_or_else(|| ApiError::not_found(package_name))?;
         if !channel.is_available_in(&details) {
             return Err(ApiError::channel_unavailable(channel, package_name));
+        }
+        if let Some(restriction) = availability_restriction(&details) {
+            console_log!(
+                "'{package_name}' has availability restriction {restriction} on the {channel} channel"
+            );
+            return Err(ApiError::not_downloadable());
         }
         let version_code = details
             .item
