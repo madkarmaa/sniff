@@ -35,11 +35,13 @@ enum class ReleaseChannel(val apiName: String) {
 
 enum class ExportFormat(val mimeType: String) {
     APK("application/vnd.android.package-archive"),
-    ZIP("application/zip");
+    ZIP("application/zip"),
+    XAPK("application/xapk-package-archive");
 
     fun suggestedFileName(result: DownloadResult): String =
         when (this) {
             APK -> result.apk.name
             ZIP -> result.apk.name.removeSuffix(".apk") + "-files.zip"
+            XAPK -> result.apk.name.removeSuffix(".apk") + ".xapk"
         }
 }

@@ -23,6 +23,7 @@
     <string name="save_apk">Save APK</string>
     <string name="share_apk">Share APK</string>
     <string name="save_zip">Save all files (ZIP)</string>
+    <string name="save_xapk">Save split APKs (XAPK)</string>
     <string name="progress_fetching">Fetching package information…</string>
     <string name="progress_downloading">Downloading %1$d/%2$d: %3$s\n%4$s</string>
     <string name="progress_merging">Merging %1$d APK files…</string>
@@ -38,7 +39,7 @@
     <string name="status_install_detached">Stopped waiting. If you confirm the system dialog, the installation still completes.</string>
     <string name="status_install_cancelled">Installation cancelled.</string>
     <string name="status_installed">Installed.</string>
-    <string name="status_installed_obb">Installed. Expansion (.obb) files are not installed; copy them manually from the ZIP of all files.</string>
+    <string name="status_installed_obb">Installed. Expansion (.obb) files are not installed; copy them manually from the ZIP of all files, or save an XAPK and install it with a split APK installer.</string>
     <string name="error_install_unknown_sources">Allow this app to install other apps in the settings, then go back. If the installation does not start, tap Install again.</string>
     <string name="error_install_failed">Installation failed.</string>
     <string name="error_install_failed_detail">Installation failed: %1$s</string>

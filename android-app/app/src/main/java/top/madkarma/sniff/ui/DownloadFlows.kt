@@ -89,7 +89,7 @@ internal fun rememberInstallAction(
     }
 }
 
-/** Returns the export action, which lets the user pick where the APK or ZIP is saved. */
+/** Returns the export action, which lets the user pick where the export is saved. */
 @Composable
 internal fun rememberExportAction(
     model: DownloadViewModel,
@@ -114,6 +114,12 @@ internal fun rememberExportAction(
         ) {
             export(it, ExportFormat.ZIP)
         }
+    val saveXapk =
+        rememberLauncherForActivityResult(
+            ActivityResultContracts.CreateDocument(ExportFormat.XAPK.mimeType),
+        ) {
+            export(it, ExportFormat.XAPK)
+        }
 
     return { result, format ->
         if (model.isCached(result)) {
@@ -123,6 +129,7 @@ internal fun rememberExportAction(
             when (format) {
                 ExportFormat.APK -> saveApk.launch(fileName)
                 ExportFormat.ZIP -> saveZip.launch(fileName)
+                ExportFormat.XAPK -> saveXapk.launch(fileName)
             }
         }
     }

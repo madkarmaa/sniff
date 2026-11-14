@@ -17,6 +17,9 @@ The interactive API reference is at `/v3/docs` and the OpenAPI document at
 link (or share one from Google Play) and choose a channel. To use your own deployment,
 tap the settings icon and enter its address.
 
+Apps with split APKs or expansion files can also be saved as an XAPK, which keeps the
+original files for split APK installers such as SAI.
+
 - Download: [GitHub Releases](https://github.com/madkarmaa/sniff/releases/latest)
 - Requires Android 8.0 (API 26) or newer
 

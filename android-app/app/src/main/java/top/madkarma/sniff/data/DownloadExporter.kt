@@ -12,6 +12,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import top.madkarma.sniff.R
+import top.madkarma.sniff.apk.XapkWriter
 import top.madkarma.sniff.util.copyWithCancellation
 
 class DownloadExporter(
@@ -31,7 +32,9 @@ class DownloadExporter(
                         ExportFormat.APK ->
                             result.apk.inputStream().use { it.copyWithCancellation(output) }
 
-                        ExportFormat.ZIP -> writeBundle(result, output)
+                        ExportFormat.ZIP -> writeAllFiles(result, output)
+
+                        ExportFormat.XAPK -> XapkWriter.write(result, output)
                     }
                 }
             } catch (error: Throwable) {
@@ -42,7 +45,7 @@ class DownloadExporter(
             }
         }
 
-    private suspend fun writeBundle(result: DownloadResult, output: OutputStream) {
+    private suspend fun writeAllFiles(result: DownloadResult, output: OutputStream) {
         ZipOutputStream(output).use { zip ->
             result.folder
                 .walkTopDown()

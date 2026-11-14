@@ -11,10 +11,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import top.madkarma.sniff.R
+import top.madkarma.sniff.apk.canExportXapk
 import top.madkarma.sniff.data.DownloadResult
 import top.madkarma.sniff.data.ExportFormat
 import top.madkarma.sniff.util.formatBytes
@@ -29,6 +31,8 @@ internal fun DownloadResultCard(
 ) {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            // Looks at the cached files, so it is checked once per result.
+            val canExportXapk = remember(result) { result.canExportXapk() }
             Text(result.title, style = MaterialTheme.typography.titleLarge)
             Text("${result.apk.name} · ${formatBytes(result.apk.length())}")
             // Not an error. The download worked, but some device variants are missing from it.
@@ -73,6 +77,15 @@ internal fun DownloadResultCard(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(stringResource(R.string.share_apk))
+            }
+            if (canExportXapk) {
+                OutlinedButton(
+                    onClick = { onExport(ExportFormat.XAPK) },
+                    enabled = enabled,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(stringResource(R.string.save_xapk))
+                }
             }
             OutlinedButton(
                 onClick = { onExport(ExportFormat.ZIP) },
