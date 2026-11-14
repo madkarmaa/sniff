@@ -85,14 +85,14 @@ fn failure(kind: ErrorKind, message: &str) -> ApiError {
 #[test]
 fn download_targets_cover_every_abi_once() {
     let abis: Vec<_> = DOWNLOAD_TARGETS.iter().map(|target| target.abi).collect();
-    assert_eq!(abis, ["arm64-v8a", "armeabi-v7a", "x86", "x86_64"]);
+    assert_eq!(abis, ["arm64-v8a", "armeabi-v7a"]);
 }
 
 #[test]
 fn collect_targets_reports_every_target_when_all_succeed() -> Result<(), ApiError> {
-    let results = vec![Ok(info("a")), Ok(info("b")), Ok(info("c")), Ok(info("d"))];
+    let results = vec![Ok(info("a")), Ok(info("b"))];
     let (merged, outcomes) = collect_targets(&DOWNLOAD_TARGETS, results)?;
-    assert_eq!(merged.splits.len(), 4);
+    assert_eq!(merged.splits.len(), 2);
     assert_eq!(outcomes.len(), DOWNLOAD_TARGETS.len());
     for (outcome, target) in outcomes.iter().zip(DOWNLOAD_TARGETS) {
         assert_eq!(outcome.target, target);
@@ -110,8 +110,6 @@ fn collect_targets_flags_partial_merges() -> Result<(), ApiError> {
             ErrorKind::Upstream,
             "Google Play returned HTTP 500",
         )),
-        Ok(info("c")),
-        Err(failure(ErrorKind::NotDownloadable, "cannot be downloaded")),
     ];
     let (merged, outcomes) = collect_targets(&DOWNLOAD_TARGETS, results)?;
     // Only the successful targets are merged...
@@ -120,7 +118,7 @@ fn collect_targets_flags_partial_merges() -> Result<(), ApiError> {
         .iter()
         .filter_map(|split| split.name.as_deref())
         .collect();
-    assert_eq!(split_names, ["config.a", "config.c"]);
+    assert_eq!(split_names, ["config.a"]);
     // ...and the failed ones stay visible, in target order.
     let summary: Vec<_> = outcomes
         .iter()
@@ -137,8 +135,6 @@ fn collect_targets_flags_partial_merges() -> Result<(), ApiError> {
         [
             ("arm64-v8a", true, None),
             ("armeabi-v7a", false, Some("Google Play returned HTTP 500")),
-            ("x86", true, None),
-            ("x86_64", false, Some("cannot be downloaded")),
         ]
     );
     Ok(())
@@ -147,8 +143,6 @@ fn collect_targets_flags_partial_merges() -> Result<(), ApiError> {
 #[test]
 fn collect_targets_fails_only_when_every_target_failed() {
     let results = vec![
-        Err(failure(ErrorKind::NotDownloadable, "no")),
-        Err(failure(ErrorKind::NotDownloadable, "no")),
         Err(failure(ErrorKind::NotDownloadable, "no")),
         Err(failure(ErrorKind::NotDownloadable, "no")),
     ];
@@ -162,8 +156,6 @@ fn collect_targets_fails_only_when_every_target_failed() {
     let results = vec![
         Err(failure(ErrorKind::NotDownloadable, "no")),
         Err(failure(ErrorKind::RateLimited, "slow down")),
-        Err(failure(ErrorKind::Upstream, "bad gateway")),
-        Err(failure(ErrorKind::NotDownloadable, "no")),
     ];
     assert_eq!(
         collect_targets(&DOWNLOAD_TARGETS, results)

@@ -56,7 +56,7 @@ class DownloadPipelineTest : PipelineTestBase() {
             .encodeToString(MessageDigest.getInstance("SHA-256").digest(apk))
         val targets = JSONArray().put(
             JSONObject().put("abi", "arm64-v8a").put("success", true).put("error", JSONObject.NULL)
-        ).put(JSONObject().put("abi", "x86").put("success", false).put("error", "unavailable"))
+        ).put(JSONObject().put("abi", "armeabi-v7a").put("success", false).put("error", "unavailable"))
         val response = JSONObject(standaloneResponse(installedVersion)).apply {
             getJSONObject("data").put("main_apk_size", apk.size).put("main_apk_sha256", digest)
                 .put("targets", targets)
@@ -65,7 +65,7 @@ class DownloadPipelineTest : PipelineTestBase() {
             context.packageName, ReleaseChannel.STABLE
         ) { _, _ -> }
         try {
-            assertEquals(listOf("x86"), result.failedAbis)
+            assertEquals(listOf("armeabi-v7a"), result.failedAbis)
         } finally {
             result.folder.deleteRecursively()
         }

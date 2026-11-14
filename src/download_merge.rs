@@ -9,7 +9,9 @@ pub struct Target {
     pub abi: &'static str,
 }
 
-pub const DOWNLOAD_TARGETS: [Target; 4] = [
+/// The ARM ABIs only. x86 is left out: almost no phone ships it, and its
+/// targets added two upstream calls each to every lookup while often failing.
+pub const DOWNLOAD_TARGETS: [Target; 2] = [
     Target {
         device: "px_9a",
         abi: "arm64-v8a",
@@ -17,14 +19,6 @@ pub const DOWNLOAD_TARGETS: [Target; 4] = [
     Target {
         device: "sm_a13_5g",
         abi: "armeabi-v7a",
-    },
-    Target {
-        device: "google_kiwi_x86_64",
-        abi: "x86",
-    },
-    Target {
-        device: "google_kiwi_x86_64",
-        abi: "x86_64",
     },
 ];
 

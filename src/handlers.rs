@@ -87,9 +87,7 @@ pub struct Caller {
                  "dex_metadata_url": null,
                  "targets": [
                      { "abi": "arm64-v8a", "device": "px_9a", "success": true, "error": null },
-                     { "abi": "armeabi-v7a", "device": "sm_a13_5g", "success": true, "error": null },
-                     { "abi": "x86", "device": "google_kiwi_x86_64", "success": false, "error": "Google Play returned HTTP 500" },
-                     { "abi": "x86_64", "device": "google_kiwi_x86_64", "success": true, "error": null }
+                     { "abi": "armeabi-v7a", "device": "sm_a13_5g", "success": true, "error": null }
                  ]
              },
              "error": null
