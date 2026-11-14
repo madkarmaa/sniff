@@ -4,7 +4,7 @@ on:
     pull_request:
     push:
         branches:
-            - '**'
+            - "**"
 
 concurrency:
     group: ci-${{ github.ref }}
@@ -51,12 +51,12 @@ jobs:
               uses: actions/setup-java@v6
               with:
                   distribution: temurin
-                  java-version: '21'
+                  java-version: "21"
 
             - name: Setup Android SDK
               uses: android-actions/setup-android@v4
               with:
-                  packages: 'platform-tools platforms;android-37.0 build-tools;36.0.0'
+                  packages: "platform-tools platforms;android-37.0 build-tools;36.0.0"
                   log-accepted-android-sdk-licenses: false
 
             - name: Setup Gradle

@@ -10,7 +10,7 @@ jobs:
     commitlint:
         runs-on: ubuntu-latest
         env:
-            HUSKY: '0'
+            HUSKY: "0"
         steps:
             - name: Check out pull request commits
               uses: actions/checkout@v7
@@ -20,19 +20,19 @@ jobs:
             - name: Cache Bun
               uses: actions/cache@v6
               with:
-                  path: '**/node_modules'
+                  path: "**/node_modules"
                   key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock') }}
 
             - name: Setup Node.js
               uses: actions/setup-node@v7
               with:
-                  node-version: '24'
+                  node-version: "24"
                   package-manager-cache: false
 
             - name: Setup Bun
               uses: oven-sh/setup-bun@v2
               with:
-                  bun-version: '1.4.4'
+                  bun-version: "1.4.4"
 
             - name: Bun install
               run: bun install --frozen-lockfile

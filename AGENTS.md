@@ -10,7 +10,7 @@
 
 - Prefer early guards in the code to reduce indentation.
 
-- Run `cargo fmt --all` as the last step before considering a task done. Format other edited files with Prettier, except README.md, whose compact tables and examples are kept by hand.
+- Run `cargo fmt --all` as the last step before considering a task done. Format other edited files with `bun fmt`.
 
 - Run Entanglement against a baseline regularly and refactor based on its results. Every edited file must stay green, with a maintainability index of at least 20.
 

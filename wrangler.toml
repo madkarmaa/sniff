@@ -3,16 +3,16 @@ main = "build/worker/shim.mjs"
 compatibility_date = "2026-11-13"
 
 routes = [
-  { pattern = "sniff.madkarma.top/v3", zone_name = "madkarma.top" },
-  { pattern = "sniff.madkarma.top/v3/*", zone_name = "madkarma.top" },
-  { pattern = "sniff.madkarma.top/*", zone_name = "madkarma.top" }
+    { pattern = "sniff.madkarma.top/v3", zone_name = "madkarma.top" },
+    { pattern = "sniff.madkarma.top/v3/*", zone_name = "madkarma.top" },
+    { pattern = "sniff.madkarma.top/*", zone_name = "madkarma.top" },
 ]
 
 [build]
 command = "cargo install -q --locked worker-build@0.9.0 && worker-build --release --locked"
 
 [vars]
-DEVICE_NAME="px_9a"
+DEVICE_NAME = "px_9a"
 
 [observability]
 enabled = true

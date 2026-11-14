@@ -2,7 +2,7 @@
 name = "sniff"
 version = "3.0.0"
 edition = "2024"
-authors = [ "MadKarma <me@madkarma.top>" ]
+authors = ["MadKarma <me@madkarma.top>"]
 repository = "https://github.com/madkarmaa/sniff"
 
 [package.metadata.release]
@@ -16,7 +16,7 @@ wasm-opt = false
 crate-type = ["cdylib"]
 
 [dependencies]
-worker = { version="0.9", features=['http', 'axum'] }
+worker = { version = "0.9", features = ['http', 'axum'] }
 console_error_panic_hook = { version = "0.1.1" }
 futures-util = { version = "0.3", default-features = false, features = ["alloc"] }
 

@@ -17,8 +17,8 @@ jobs:
             contents: write
         env:
             # The release commit only changes the app version, so it skips the hooks.
-            HUSKY: '0'
-            ANDROID_BUILD_TOOLS: '36.0.0'
+            HUSKY: "0"
+            ANDROID_BUILD_TOOLS: "36.0.0"
         steps:
             - name: Checkout with release history
               uses: actions/checkout@v7
@@ -28,30 +28,30 @@ jobs:
             - name: Cache Bun
               uses: actions/cache@v6
               with:
-                  path: '**/node_modules'
+                  path: "**/node_modules"
                   key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock') }}
 
             - name: Setup Node.js
               uses: actions/setup-node@v7
               with:
-                  node-version: '24'
+                  node-version: "24"
                   package-manager-cache: false
 
             - name: Setup Bun
               uses: oven-sh/setup-bun@v2
               with:
-                  bun-version: '1.4.4'
+                  bun-version: "1.4.4"
 
             - name: Setup Java
               uses: actions/setup-java@v6
               with:
                   distribution: temurin
-                  java-version: '21'
+                  java-version: "21"
 
             - name: Setup Android SDK
               uses: android-actions/setup-android@v4
               with:
-                  packages: 'platform-tools platforms;android-37.0 build-tools;36.0.0'
+                  packages: "platform-tools platforms;android-37.0 build-tools;36.0.0"
                   log-accepted-android-sdk-licenses: false
 
             - name: Setup Gradle
