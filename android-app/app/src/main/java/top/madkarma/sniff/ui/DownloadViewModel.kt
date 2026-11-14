@@ -13,30 +13,17 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import top.madkarma.sniff.R
 import top.madkarma.sniff.apk.InstallEvents
-import top.madkarma.sniff.apk.InstallOutcome
 import top.madkarma.sniff.apk.SplitInstaller
-import top.madkarma.sniff.apk.hasExpansionFiles
 import top.madkarma.sniff.data.DownloadExporter
 import top.madkarma.sniff.data.DownloadResult
 import top.madkarma.sniff.data.DownloadSource
 import top.madkarma.sniff.data.ExportFormat
 import top.madkarma.sniff.data.ReleaseChannel
-import top.madkarma.sniff.data.UiText
 import top.madkarma.sniff.data.packageIdFromInput
 import top.madkarma.sniff.data.toDownloadError
-import top.madkarma.sniff.data.toInstallError
 import top.madkarma.sniff.data.toSaveError
 import top.madkarma.sniff.data.uiText
 import top.madkarma.sniff.service.ActiveWork
-
-data class DownloadUiState(
-    val busy: Boolean = false,
-    val message: UiText? = null,
-    /** Overall progress from 0 to 1 while busy; null when it is not known, such as when merging. */
-    val progress: Float? = null,
-    val error: Boolean = false,
-    val result: DownloadResult? = null,
-)
 
 class DownloadViewModel(
     private val repository: DownloadSource,
@@ -46,17 +33,13 @@ class DownloadViewModel(
     private val mutableState = MutableStateFlow(DownloadUiState())
     val state: StateFlow<DownloadUiState> = mutableState.asStateFlow()
     private var task: Job? = null
-
-    // The session whose outcome is awaited. Set from the IO thread before the commit, so an
-    // outcome that arrives right away is still recognized.
-    @Volatile private var installSession = NO_SESSION
-    private var installHasExpansionFiles = false
+    private val installs = InstallTracker(installer, mutableState)
 
     init {
         // Outcomes are collected for the whole life of the ViewModel, also those of sessions this
         // instance did not start, such as one finished after the process was recreated.
         viewModelScope.launch {
-            InstallEvents.outcomes.filterNotNull().collect { onInstallOutcome(it) }
+            InstallEvents.outcomes.filterNotNull().collect { installs.onOutcome(it) }
         }
     }
 
@@ -107,18 +90,8 @@ class DownloadViewModel(
     fun cancel() {
         // Once the session is committed the task is done and the system dialog cannot be recalled.
         // Cancelling then only stops waiting; a later outcome is still shown.
-        if (installSession != NO_SESSION && task?.isActive != true) {
-            installSession = NO_SESSION
-            mutableState.update {
-                it.copy(
-                    busy = false,
-                    error = false,
-                    message = uiText(R.string.status_install_detached),
-                )
-            }
-        } else {
-            task?.cancel()
-        }
+        if (installs.isAwaiting && task?.isActive != true) installs.stopAwaiting()
+        else task?.cancel()
     }
 
     /** Asks the user to allow installs from this app; the UI opens the settings screen for it. */
@@ -128,55 +101,14 @@ class DownloadViewModel(
         }
     }
 
-    /**
-     * Installs the original APK files of [result]. The state stays busy until the system reports
-     * the outcome, see [onInstallOutcome].
-     */
+    /** Installs the original APK files of [result], see [InstallTracker.install]. */
     fun install(result: DownloadResult) {
         if (state.value.busy) return
-        installHasExpansionFiles = result.hasExpansionFiles()
         mutableState.update {
             it.copy(busy = true, error = false, message = uiText(R.string.status_install_preparing))
         }
 
-        task = launchWork {
-            try {
-                val session = installer.install(result) { installSession = it }
-                // The outcome may have been handled already while this coroutine was resuming.
-                if (installSession == session) {
-                    mutableState.update {
-                        it.copy(message = uiText(R.string.status_install_confirm))
-                    }
-                }
-            } catch (_: CancellationException) {
-                installSession = NO_SESSION
-                mutableState.update {
-                    it.copy(busy = false, message = uiText(R.string.status_install_cancelled))
-                }
-            } catch (error: Exception) {
-                installSession = NO_SESSION
-                mutableState.update {
-                    it.copy(busy = false, error = true, message = error.toInstallError())
-                }
-            }
-        }
-    }
-
-    private fun onInstallOutcome(outcome: InstallOutcome) {
-        InstallEvents.consume(outcome)
-
-        val awaited = installSession != NO_SESSION && outcome.sessionId == installSession
-        // A late outcome must not replace the progress of something else that is running.
-        if (!awaited && state.value.busy) return
-
-        if (awaited) installSession = NO_SESSION
-        val text =
-            if (awaited && outcome.success && installHasExpansionFiles) {
-                uiText(R.string.status_installed_obb)
-            } else {
-                outcome.text
-            }
-        mutableState.update { it.copy(busy = false, error = outcome.error, message = text) }
+        task = launchWork { installs.install(result) }
     }
 
     fun export(uri: Uri, result: DownloadResult, format: ExportFormat) {
@@ -216,9 +148,5 @@ class DownloadViewModel(
     override fun onCleared() {
         // The scope is cancelled, so the task is too; this also covers a task that never started.
         ActiveWork.set(false)
-    }
-
-    private companion object {
-        const val NO_SESSION = -1
     }
 }
