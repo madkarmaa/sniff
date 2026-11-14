@@ -7,6 +7,13 @@
     <string name="beta">Beta</string>
     <string name="alpha">Alpha</string>
     <string name="download_apk">Download APK</string>
+    <string name="asset_packs">On-demand asset packs (optional)</string>
+    <string name="asset_packs_example" translatable="false">krisp</string>
+    <string name="asset_packs_description">Google Play does not list on-demand asset packs, so enter their names separated by commas. Fast-follow packs are always included.</string>
+    <string name="asset_packs_install_time">Install-time asset packs: %1$s</string>
+    <string name="asset_packs_fast_follow">Fast-follow asset packs: %1$s</string>
+    <string name="asset_packs_on_demand">On-demand asset packs: %1$s</string>
+    <string name="asset_packs_not_installed">Fast-follow and on-demand packs cannot be installed with the app. They are kept in the XAPK and in the ZIP of all files.</string>
     <string name="resign">Re-sign</string>
     <string name="resign_description">A merged APK is no longer validly signed by its developer. Re-signing signs it with a key generated on this device so it can be installed, but it cannot update a copy installed from Google Play and will not receive Play updates.</string>
     <string name="clear">Clear</string>
@@ -48,6 +55,7 @@
     <string name="error_install_incompatible">This app is not compatible with this device.</string>
     <string name="error_install_invalid">The downloaded files are not a valid app package.</string>
     <string name="error_install_storage">There is not enough storage space to install the app.</string>
+    <string name="error_invalid_asset_packs">Asset pack names may only contain letters, digits and underscores, separated by commas (at most %1$d).</string>
     <string name="error_invalid_package">Enter a valid package ID or Google Play link, such as com.google.android.calculator</string>
     <string name="error_download_failed">Download failed</string>
     <string name="error_save_failed">Save failed</string>

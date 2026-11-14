@@ -17,7 +17,11 @@ internal class SniffApi(
     private val client: OkHttpClient,
     private val serverUrl: () -> String,
 ) {
-    suspend fun fetchDownloadPlan(packageId: String, channel: ReleaseChannel): DownloadPlan {
+    suspend fun fetchDownloadPlan(
+        packageId: String,
+        channel: ReleaseChannel,
+        assetPacks: List<String> = emptyList(),
+    ): DownloadPlan {
         val endpoint =
             serverUrl()
                 .toHttpUrl()
@@ -26,6 +30,11 @@ internal class SniffApi(
                 .addPathSegment("download")
                 .addPathSegment(packageId)
                 .addPathSegment(channel.apiName)
+                .apply {
+                    if (assetPacks.isNotEmpty()) {
+                        addQueryParameter("asset_packs", assetPacks.joinToString(","))
+                    }
+                }
                 .build()
 
         val request =

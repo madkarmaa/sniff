@@ -44,6 +44,7 @@ internal fun DownloadScreen(
     // Only prefills; the user starts the download.
     LaunchedEffect(incoming) { if (incoming != null) packageId = incoming.text }
     var channel by rememberSaveable { mutableStateOf(ReleaseChannel.STABLE) }
+    var assetPacks by rememberSaveable { mutableStateOf("") }
     var resign by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
     val focus = LocalFocusManager.current
@@ -80,15 +81,17 @@ internal fun DownloadScreen(
         DownloadForm(
             packageId = packageId,
             channel = channel,
+            assetPacks = assetPacks,
             resign = resign,
             enabled = !state.busy,
             onPackageIdChange = { packageId = it },
             onChannelChange = { channel = it },
+            onAssetPacksChange = { assetPacks = it },
             onResignChange = { resign = it },
             onDownload = {
                 focus.clearFocus()
                 askNotifications()
-                model.download(packageId, channel, resign)
+                model.download(packageId, channel, resign, assetPacks)
             },
         )
         DownloadStatus(state = state, onCancel = model::cancel)

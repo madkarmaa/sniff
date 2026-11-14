@@ -17,6 +17,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import top.madkarma.sniff.R
 import top.madkarma.sniff.apk.canExportXapk
+import top.madkarma.sniff.data.AssetPack
+import top.madkarma.sniff.data.AssetPackDelivery
 import top.madkarma.sniff.data.DownloadResult
 import top.madkarma.sniff.data.ExportFormat
 import top.madkarma.sniff.util.formatBytes
@@ -49,6 +51,7 @@ internal fun DownloadResultCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            if (result.assetPacks.isNotEmpty()) AssetPackSummary(result.assetPacks)
             Button(
                 onClick = onInstall,
                 enabled = enabled,
@@ -97,3 +100,28 @@ internal fun DownloadResultCard(
         }
     }
 }
+
+/** Lists the asset packs by delivery mode; only install-time packs are installed with the app. */
+@Composable
+private fun AssetPackSummary(packs: List<AssetPack>) {
+    val lines =
+        AssetPackDelivery.entries.mapNotNull { delivery ->
+            val names = packs.filter { it.delivery == delivery }.map { it.name }.distinct()
+            if (names.isEmpty()) null
+            else stringResource(delivery.summaryResource(), names.joinToString(", "))
+        }
+    val notInstalled = packs.any { it.delivery != AssetPackDelivery.INSTALL_TIME }
+    val note = if (notInstalled) stringResource(R.string.asset_packs_not_installed) else null
+    Text(
+        text = (lines + listOfNotNull(note)).joinToString("\n"),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+private fun AssetPackDelivery.summaryResource(): Int =
+    when (this) {
+        AssetPackDelivery.INSTALL_TIME -> R.string.asset_packs_install_time
+        AssetPackDelivery.FAST_FOLLOW -> R.string.asset_packs_fast_follow
+        AssetPackDelivery.ON_DEMAND -> R.string.asset_packs_on_demand
+    }

@@ -11,6 +11,7 @@ data class DownloadResult(
     val cached: Boolean = false,
     /** ABIs the server could not fetch, so the APK may lack native code for them. */
     val failedAbis: List<String> = emptyList(),
+    val assetPacks: List<AssetPack> = emptyList(),
 )
 
 /**
@@ -23,6 +24,8 @@ interface DownloadSource {
         packageId: String,
         channel: ReleaseChannel,
         resign: Boolean = false,
+        /** On-demand asset packs to include; Google Play does not list them. */
+        assetPacks: List<String> = emptyList(),
         onProgress: ProgressListener,
     ): DownloadResult
 }

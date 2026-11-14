@@ -29,6 +29,7 @@ class SniffRepository(
         packageId: String,
         channel: ReleaseChannel,
         resign: Boolean,
+        assetPacks: List<String>,
         onProgress: ProgressListener,
     ): DownloadResult =
         withContext(io) {
@@ -38,7 +39,7 @@ class SniffRepository(
 
             onProgress(uiText(R.string.progress_fetching), null)
 
-            val plan = api.fetchDownloadPlan(packageId, channel)
+            val plan = api.fetchDownloadPlan(packageId, channel, assetPacks)
             val folder = File(root, packageId)
             removeIncompleteFolders()
 
@@ -78,7 +79,15 @@ class SniffRepository(
         }
 
         if (renamed || rebuilt) {
-            writeInventory(plan, channel, folder, output, resign, cached.failedAbis)
+            writeInventory(
+                plan,
+                channel,
+                folder,
+                output,
+                resign,
+                cached.failedAbis,
+                cached.assetPacks,
+            )
         }
 
         return DownloadResult(
@@ -89,6 +98,7 @@ class SniffRepository(
             title = plan.title,
             cached = true,
             failedAbis = cached.failedAbis,
+            assetPacks = cached.assetPacks,
         )
     }
 
@@ -106,10 +116,11 @@ class SniffRepository(
             downloadFiles(downloader, plan, staging, onProgress)
 
             val output = prepareApk(plan, staging, resign, onProgress)
+            val assetPacks = installTimeAssetPacks(File(staging, "apks")) + plan.assetPacks
 
             currentCoroutineContext().ensureActive()
 
-            writeInventory(plan, channel, staging, output, resign, plan.failedAbis)
+            writeInventory(plan, channel, staging, output, resign, plan.failedAbis, assetPacks)
 
             folder.deleteRecursively()
             check(staging.renameTo(folder)) { "Could not update the cached download" }
@@ -121,6 +132,7 @@ class SniffRepository(
                 merged = plan.hasSplits,
                 title = plan.title,
                 failedAbis = plan.failedAbis,
+                assetPacks = assetPacks,
             )
         } catch (error: Throwable) {
             staging.deleteRecursively()

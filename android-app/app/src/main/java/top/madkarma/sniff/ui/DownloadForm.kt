@@ -29,10 +29,12 @@ import top.madkarma.sniff.data.ReleaseChannel
 internal fun DownloadForm(
     packageId: String,
     channel: ReleaseChannel,
+    assetPacks: String,
     resign: Boolean,
     enabled: Boolean,
     onPackageIdChange: (String) -> Unit,
     onChannelChange: (ReleaseChannel) -> Unit,
+    onAssetPacksChange: (String) -> Unit,
     onResignChange: (Boolean) -> Unit,
     onDownload: () -> Unit,
 ) {
@@ -68,6 +70,17 @@ internal fun DownloadForm(
             )
         }
     }
+    OutlinedTextField(
+        value = assetPacks,
+        onValueChange = onAssetPacksChange,
+        enabled = enabled,
+        label = { Text(stringResource(R.string.asset_packs)) },
+        placeholder = { Text(stringResource(R.string.asset_packs_example)) },
+        supportingText = { Text(stringResource(R.string.asset_packs_description)) },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
+        modifier = Modifier.fillMaxWidth(),
+    )
     Row(
         modifier =
             Modifier.fillMaxWidth()

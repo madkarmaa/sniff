@@ -8,6 +8,8 @@ internal data class DownloadPlan(
     val splitCount: Int,
     /** ABIs the server could not fetch; the merged APK may lack native code for them. */
     val failedAbis: List<String> = emptyList(),
+    /** Fast-follow and on-demand packs; their files are in [files] too. */
+    val assetPacks: List<AssetPack> = emptyList(),
 ) {
     val hasSplits: Boolean
         get() = splitCount > 0

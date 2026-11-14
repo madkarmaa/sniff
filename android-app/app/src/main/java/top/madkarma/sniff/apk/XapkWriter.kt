@@ -9,6 +9,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import org.json.JSONArray
 import org.json.JSONObject
+import top.madkarma.sniff.data.ASSET_PACK_FOLDER
 import top.madkarma.sniff.data.DownloadResult
 import top.madkarma.sniff.util.copyWithCancellation
 
@@ -16,15 +17,25 @@ private const val XAPK_VERSION = 2
 private const val BASE_SPLIT_ID = "base"
 private val SPLIT_NUMBER_PREFIX = Regex("^split-\\d+-")
 
-/** A single APK without expansion files gains nothing from a bundle. */
-internal fun DownloadResult.canExportXapk(): Boolean = merged || hasExpansionFiles()
+/** A single APK without expansion files or asset packs gains nothing from a bundle. */
+internal fun DownloadResult.canExportXapk(): Boolean =
+    merged || hasExpansionFiles() || assetPackFiles().isNotEmpty()
+
+/** The asset packs that cannot be installed as splits, see [ASSET_PACK_FOLDER]. */
+private fun DownloadResult.assetPackFiles(): List<File> =
+    File(folder, ASSET_PACK_FOLDER)
+        .listFiles { file -> file.extension == "apk" }
+        .orEmpty()
+        .sortedBy { it.name }
 
 /**
  * Writes a download as an XAPK, the split bundle of APKPure that split APK installers such as SAI
  * and App Manager read. It holds the original APKs, so they keep the developer's signature.
  *
  * XAPK has no official specification. The manifest carries the fields that the known readers
- * require, and the layout follows the archives APKPure publishes.
+ * require, and the layout follows the archives APKPure publishes. Fast-follow and on-demand asset
+ * packs have no version code, so no installer can add them as splits. They are stored apart and
+ * listed under a key of their own, which installers ignore.
  */
 internal object XapkWriter {
     private class Entry(val file: File, val path: String, val splitId: String? = null)
@@ -56,6 +67,9 @@ internal object XapkWriter {
                     .sortedBy { it.name }
                     .map { Entry(it, "Android/obb/$packageId/${it.name}") }
 
+            val assetPacks =
+                result.assetPackFiles().map { Entry(it, "$ASSET_PACK_FOLDER/${it.name}") }
+
             val minSdk = manifest.minSdkVersion ?: 1
             val xapkManifest =
                 JSONObject()
@@ -67,7 +81,10 @@ internal object XapkWriter {
                     .put("version_name", manifest.versionName.orEmpty())
                     .put("min_sdk_version", minSdk)
                     .put("target_sdk_version", manifest.targetSdkVersion ?: minSdk)
-                    .put("total_size", (apks + expansions).sumOf { it.file.length() })
+                    .put(
+                        "total_size",
+                        (apks + expansions + assetPacks).sumOf { it.file.length() },
+                    )
                     .put("split_configs", JSONArray(splits.map { it.splitId }))
                     .put(
                         "split_apks",
@@ -86,13 +103,17 @@ internal object XapkWriter {
                             },
                         ),
                     )
+                    .put(
+                        "asset_packs",
+                        JSONArray(assetPacks.map { JSONObject().put("file", it.path) }),
+                    )
 
             ZipOutputStream(output).use { zip ->
                 zip.putNextEntry(ZipEntry("manifest.json"))
                 zip.write(xapkManifest.toString(2).toByteArray())
                 zip.closeEntry()
 
-                (apks + expansions).forEach { entry ->
+                (apks + expansions + assetPacks).forEach { entry ->
                     currentCoroutineContext().ensureActive()
 
                     zip.putNextEntry(ZipEntry(entry.path))

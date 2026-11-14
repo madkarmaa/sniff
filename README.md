@@ -20,6 +20,11 @@ tap the settings icon and enter its address.
 Apps with split APKs or expansion files can also be saved as an XAPK, which keeps the
 original files for split APK installers such as SAI.
 
+Play Asset Delivery packs are downloaded too. Install-time packs install with the app.
+Fast-follow packs are always included. Google Play does not list on-demand packs, so
+enter their names to include them. Fast-follow and on-demand packs cannot be installed
+as splits, so they are kept in the XAPK and in the ZIP of all files.
+
 - Download: [GitHub Releases](https://github.com/madkarmaa/sniff/releases/latest)
 - Requires Android 8.0 (API 26) or newer
 

@@ -20,6 +20,7 @@ import top.madkarma.sniff.data.DownloadSource
 import top.madkarma.sniff.data.ExportFormat
 import top.madkarma.sniff.data.ReleaseChannel
 import top.madkarma.sniff.data.packageIdFromInput
+import top.madkarma.sniff.data.parseAssetPackNames
 import top.madkarma.sniff.data.toDownloadError
 import top.madkarma.sniff.data.toSaveError
 import top.madkarma.sniff.data.uiText
@@ -43,16 +44,26 @@ class DownloadViewModel(
         }
     }
 
-    /** Downloads the app named by [input], either a package ID or a Google Play link. */
-    fun download(input: String, channel: ReleaseChannel, resign: Boolean = false) {
+    /**
+     * Downloads the app named by [input], either a package ID or a Google Play link, with the
+     * on-demand asset packs named in [assetPacks].
+     */
+    fun download(
+        input: String,
+        channel: ReleaseChannel,
+        resign: Boolean = false,
+        assetPacks: String = "",
+    ) {
         if (state.value.busy) return
         mutableState.value = DownloadUiState(busy = true)
 
         task = launchWork {
             try {
                 val packageId = packageIdFromInput(input)
+                val packNames = parseAssetPackNames(assetPacks)
                 val result =
-                    repository.download(packageId, channel, resign) { message, fraction ->
+                    repository.download(packageId, channel, resign, packNames) { message, fraction
+                        ->
                         mutableState.update { it.copy(message = message, progress = fraction) }
                     }
 

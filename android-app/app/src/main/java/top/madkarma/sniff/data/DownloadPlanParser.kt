@@ -27,6 +27,7 @@ internal fun parseDownloadPlan(packageId: String, data: JSONObject): DownloadPla
 
     val splitCount = addSplits(data, files)
     addAdditionalFiles(data, files)
+    val assetPacks = addAssetPacks(data, files)
 
     data.optText("dex_metadata_url")?.let { files += RemoteFile("base.dm", it, "metadata/base.dm") }
 
@@ -37,6 +38,7 @@ internal fun parseDownloadPlan(packageId: String, data: JSONObject): DownloadPla
         files = files.toList(),
         splitCount = splitCount,
         failedAbis = failedAbis(data),
+        assetPacks = assetPacks,
     )
 }
 
@@ -95,6 +97,39 @@ private fun addAdditionalFiles(data: JSONObject, files: MutableList<RemoteFile>)
                 sha256 = file.optText("sha256"),
             )
     }
+}
+
+/**
+ * Adds the files of the asset packs, which servers before API 3.1 do not send, and returns the
+ * packs. They go to their own folder, since they cannot be installed or merged like splits.
+ */
+private fun addAssetPacks(data: JSONObject, files: MutableList<RemoteFile>): List<AssetPack> {
+    val packFiles = data.optJSONArray("asset_packs") ?: return emptyList()
+    val names = mutableSetOf<String>()
+    val packs = mutableListOf<AssetPack>()
+
+    for (index in 0 until packFiles.length()) {
+        val file = packFiles.getJSONObject(index)
+        val packName = checkNotNull(file.optText("name")) { "API omitted an asset pack name" }
+        val delivery =
+            AssetPackDelivery.fromApiName(file.optText("delivery_mode").orEmpty())
+                ?: AssetPackDelivery.ON_DEMAND
+
+        val name = safeFileName(file.optText("slice_id") ?: packName)
+        check(names.add(name)) { "API returned duplicate asset pack files" }
+
+        files +=
+            RemoteFile(
+                label = "$name.apk",
+                url = requiredUrl(file, "download_url"),
+                relativePath = "$ASSET_PACK_FOLDER/$name.apk",
+                size = file.optSize("size"),
+                sha256 = file.optText("sha256"),
+            )
+        packs += AssetPack(packName, delivery)
+    }
+
+    return packs.distinct()
 }
 
 private fun requiredUrl(json: JSONObject, key: String): String =

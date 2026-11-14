@@ -50,6 +50,7 @@ class InteractiveUiTest {
                     packageId: String,
                     channel: ReleaseChannel,
                     resign: Boolean,
+                    assetPacks: List<String>,
                     onProgress: ProgressListener,
                 ) = result
             }

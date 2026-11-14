@@ -17,6 +17,7 @@ internal data class CachedDownload(
     val output: String,
     /** The ABIs this download lacks because the server could not fetch them. */
     val failedAbis: List<String>,
+    val assetPacks: List<AssetPack>,
 )
 
 internal fun readCachedDownload(folder: File, plan: DownloadPlan): CachedDownload? {
@@ -36,6 +37,8 @@ internal fun readCachedDownload(folder: File, plan: DownloadPlan): CachedDownloa
                 output = json.getString("output"),
                 failedAbis =
                     failed?.let { abis -> List(abis.length()) { abis.getString(it) } }.orEmpty(),
+                // Inventories written before asset pack support have none.
+                assetPacks = readAssetPacks(json.optJSONArray("asset_packs")),
             )
         }
             .getOrNull() ?: return null
@@ -44,8 +47,23 @@ internal fun readCachedDownload(folder: File, plan: DownloadPlan): CachedDownloa
     // A download that lacks ABIs is only reused if the server still cannot offer them; otherwise
     // downloading again completes it.
     val sufficient = plan.failedAbis.containsAll(cached.failedAbis)
-    return cached.takeIf { it.versionCode == plan.versionCode && complete && sufficient }
+    // Asking for an on-demand pack the cache lacks downloads the app again with it.
+    val hasAssetPacks =
+        plan.files
+            .filter { it.relativePath.startsWith("$ASSET_PACK_FOLDER/") }
+            .all { it.relativePath in cached.files }
+    return cached.takeIf {
+        it.versionCode == plan.versionCode && complete && sufficient && hasAssetPacks
+    }
 }
+
+private fun readAssetPacks(packs: JSONArray?): List<AssetPack> =
+    (0 until (packs?.length() ?: 0)).mapNotNull { index ->
+        val pack = packs?.optJSONObject(index) ?: return@mapNotNull null
+        val delivery =
+            AssetPackDelivery.fromApiName(pack.optString("delivery")) ?: return@mapNotNull null
+        AssetPack(pack.getString("name"), delivery)
+    }
 
 internal fun writeInventory(
     plan: DownloadPlan,
@@ -54,6 +72,7 @@ internal fun writeInventory(
     output: File,
     resign: Boolean,
     failedAbis: List<String>,
+    assetPacks: List<AssetPack>,
 ) {
     // Signed download URLs expire and must not be included in exported inventories.
     val inventory =
@@ -66,6 +85,14 @@ internal fun writeInventory(
             .put("files", JSONArray(plan.files.map { it.relativePath }))
             .put("output", output.name)
             .put("failed_abis", JSONArray(failedAbis))
+            .put(
+                "asset_packs",
+                JSONArray(
+                    assetPacks.map {
+                        JSONObject().put("name", it.name).put("delivery", it.delivery.apiName)
+                    },
+                ),
+            )
 
     File(folder, INVENTORY_FILE).writeText(inventory.toString(2))
 }
