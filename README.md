@@ -46,9 +46,9 @@ plan to use:
    starts with `oauth2_4/` and works only once.
 3. Exchange it for an AAS token. The helper prints the token:
 
-   ```bash
-   cargo run -p oauth2aas -- <email> <oauth_token>
-   ```
+    ```bash
+    cargo run -p oauth2aas -- <email> <oauth_token>
+    ```
 
 ![How to get the token](./.github/token.png)
 
