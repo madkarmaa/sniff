@@ -8,15 +8,19 @@ import top.madkarma.sniff.BuildConfig
 import top.madkarma.sniff.R
 import java.util.concurrent.TimeUnit
 
-const val API_ROOT = "https://sniff.madkarma.top/v3"
+/** The API version this app speaks; a server serves it under this path segment. */
+const val API_VERSION = "v3"
 
 private const val API_CALL_TIMEOUT_SECONDS = 120L
 
-internal class SniffApi(private val client: OkHttpClient) {
+internal class SniffApi(
+    private val client: OkHttpClient,
+    private val serverUrl: () -> String,
+) {
     suspend fun fetchDownloadPlan(packageId: String, channel: ReleaseChannel): DownloadPlan {
-        val endpoint =
-            API_ROOT.toHttpUrl().newBuilder().addPathSegment("download").addPathSegment(packageId)
-                .addPathSegment(channel.apiName).build()
+        val endpoint = serverUrl().toHttpUrl().newBuilder().addPathSegment(API_VERSION)
+            .addPathSegment("download").addPathSegment(packageId).addPathSegment(channel.apiName)
+            .build()
 
         val request = Request.Builder().url(endpoint)
             .header("User-Agent", "Sniff-Android/${BuildConfig.VERSION_NAME}").build()

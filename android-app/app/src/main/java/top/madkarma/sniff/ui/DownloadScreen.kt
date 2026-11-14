@@ -2,6 +2,7 @@ package top.madkarma.sniff.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
@@ -16,6 +17,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
@@ -24,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import top.madkarma.sniff.R
 import top.madkarma.sniff.data.ReleaseChannel
+import top.madkarma.sniff.data.ServerSettings
 import top.madkarma.sniff.service.ActiveWork
 import top.madkarma.sniff.service.startDownloadService
 
@@ -31,7 +34,11 @@ import top.madkarma.sniff.service.startDownloadService
 internal class IncomingInput(val text: String)
 
 @Composable
-internal fun DownloadScreen(model: DownloadViewModel, incoming: IncomingInput? = null) {
+internal fun DownloadScreen(
+    model: DownloadViewModel,
+    serverSettings: ServerSettings,
+    incoming: IncomingInput? = null,
+) {
     val state by model.state.collectAsStateWithLifecycle()
     var packageId by rememberSaveable { mutableStateOf("") }
     // Only prefills; the user starts the download.
@@ -61,7 +68,14 @@ internal fun DownloadScreen(model: DownloadViewModel, incoming: IncomingInput? =
             .padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text(stringResource(R.string.app_name), style = MaterialTheme.typography.headlineLarge)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = stringResource(R.string.app_name),
+                style = MaterialTheme.typography.headlineLarge,
+                modifier = Modifier.weight(1f),
+            )
+            ServerSettingsButton(serverSettings)
+        }
         Text(stringResource(R.string.introduction))
         DownloadForm(
             packageId = packageId,

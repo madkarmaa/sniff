@@ -10,6 +10,13 @@
     <string name="resign">Re-sign</string>
     <string name="resign_description">A merged APK is no longer validly signed by its developer. Re-signing signs it with a key generated on this device so it can be installed, but it cannot update a copy installed from Google Play and will not receive Play updates.</string>
     <string name="clear">Clear</string>
+    <string name="save">Save</string>
+    <string name="server_settings">Server settings</string>
+    <string name="server_title">Server</string>
+    <string name="server_description">Sniff gets app information from this server. To use your own deployment, enter its address; the app adds /v3 itself.</string>
+    <string name="server_url">Server URL</string>
+    <string name="server_reset">Default</string>
+    <string name="error_server_url">Enter an HTTPS address, such as %1$s</string>
     <string name="cancel">Cancel</string>
     <string name="install_apk">Install</string>
     <string name="install_hint">Install uses the original files signed by the developer, so it can update an installed copy. Save and Share provide the merged APK.</string>

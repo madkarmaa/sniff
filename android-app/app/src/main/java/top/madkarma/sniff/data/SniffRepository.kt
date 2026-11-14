@@ -18,9 +18,11 @@ class SniffRepository(
     context: Context,
     client: OkHttpClient = createHttpClient(),
     private val io: CoroutineDispatcher = Dispatchers.IO,
+    /** Read for every lookup, so a changed server applies to the next download. */
+    serverUrl: () -> String = { DEFAULT_SERVER_URL },
 ) : DownloadSource {
     private val root = File(context.cacheDir, "downloads")
-    private val api = SniffApi(client)
+    private val api = SniffApi(client, serverUrl)
     private val downloader = FileDownloader(client)
 
     override suspend fun download(

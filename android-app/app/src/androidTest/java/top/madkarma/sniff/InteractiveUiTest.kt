@@ -19,6 +19,7 @@ import top.madkarma.sniff.data.DownloadResult
 import top.madkarma.sniff.data.DownloadSource
 import top.madkarma.sniff.data.ProgressListener
 import top.madkarma.sniff.data.ReleaseChannel
+import top.madkarma.sniff.data.ServerSettings
 import top.madkarma.sniff.ui.DownloadScreen
 import top.madkarma.sniff.ui.DownloadViewModel
 import java.io.File
@@ -59,7 +60,7 @@ class InteractiveUiTest {
         try {
             ActivityScenario.launch(MainActivity::class.java).use { scenario ->
                 scenario.onActivity { activity ->
-                    activity.setContent { MaterialTheme { Surface { DownloadScreen(model) } } }
+                    activity.setContent { MaterialTheme { Surface { DownloadScreen(model, ServerSettings(context)) } } }
                     model.download(inventory.getString("package"), ReleaseChannel.STABLE)
                 }
                 val deadline = System.nanoTime() + 300_000_000_000L

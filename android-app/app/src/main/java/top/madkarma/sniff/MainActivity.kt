@@ -24,6 +24,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import top.madkarma.sniff.apk.SplitInstaller
 import top.madkarma.sniff.data.DownloadExporter
+import top.madkarma.sniff.data.ServerSettings
 import top.madkarma.sniff.data.SniffRepository
 import top.madkarma.sniff.data.packageInputFromSharedText
 import top.madkarma.sniff.ui.DownloadScreen
@@ -44,10 +45,13 @@ class MainActivity : ComponentActivity() {
         if (savedInstanceState == null && !fromHistory) receive(intent)
         addOnNewIntentListener { receive(it) }
 
+        val serverSettings = ServerSettings(applicationContext)
         val factory = viewModelFactory {
             initializer {
                 DownloadViewModel(
-                    repository = SniffRepository(applicationContext),
+                    repository = SniffRepository(
+                        applicationContext, serverUrl = { serverSettings.serverUrl }
+                    ),
                     exporter = DownloadExporter(contentResolver),
                     installer = SplitInstaller(applicationContext),
                 )
@@ -68,7 +72,7 @@ class MainActivity : ComponentActivity() {
                 lightColorScheme()
             }
             MaterialTheme(colorScheme = colorScheme) {
-                Surface(Modifier.fillMaxSize()) { DownloadScreen(model, incoming) }
+                Surface(Modifier.fillMaxSize()) { DownloadScreen(model, serverSettings, incoming) }
             }
         }
     }

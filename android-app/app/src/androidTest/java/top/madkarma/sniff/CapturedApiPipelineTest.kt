@@ -18,7 +18,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
-import top.madkarma.sniff.data.API_ROOT
+import top.madkarma.sniff.data.API_VERSION
+import top.madkarma.sniff.data.DEFAULT_SERVER_URL
 import top.madkarma.sniff.data.ReleaseChannel
 import top.madkarma.sniff.data.SniffRepository
 import java.io.File
@@ -42,7 +43,7 @@ class CapturedApiPipelineTest : PipelineTestBase() {
                 .getString("package_name")
         val client =
             OkHttpClient.Builder().readTimeout(60, TimeUnit.SECONDS).addInterceptor { chain ->
-                if (chain.request().url.toString().startsWith("$API_ROOT/download/")) {
+                if (chain.request().url.toString().startsWith("$DEFAULT_SERVER_URL/$API_VERSION/download/")) {
                     Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1)
                         .code(200).message("Captured real API response")
                         .body(captured.toResponseBody("application/json".toMediaType())).build()
