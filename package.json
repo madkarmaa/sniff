@@ -2,12 +2,23 @@
     "name": "sniff",
     "private": true,
     "devDependencies": {
+        "@commitlint/cli": "21.2.4",
+        "@commitlint/config-conventional": "21.2.4",
+        "husky": "9.1.7",
+        "lint-staged": "17.6.0",
         "prettier": "3.10.1",
         "wrangler": "4.162.0"
     },
     "scripts": {
         "format": "prettier --write --ignore-unknown .",
         "dev": "wrangler dev",
-        "deploy": "wrangler deploy"
+        "deploy": "wrangler deploy",
+        "commitlint": "commitlint",
+        "prepare": "husky"
+    },
+    "commitlint": {
+        "extends": [
+            "@commitlint/config-conventional"
+        ]
     }
 }
