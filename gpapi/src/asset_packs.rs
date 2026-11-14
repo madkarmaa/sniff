@@ -157,16 +157,14 @@ fn asset_pack_files(bytes: &[u8]) -> Result<Vec<AssetPackFile>, Box<dyn Error + 
     let modules = ResponseWrapper::decode(bytes)?
         .payload
         .and_then(|payload| payload.module_delivery_info)
-        .map(|info| info.modules)
-        .unwrap_or_default();
+        .map_or_default(|info| info.modules);
     let mut files = Vec::new();
     for module in modules {
         let pack_name = module.name.unwrap_or_default();
         for slice in module.slices {
             let chunks = slice
                 .full_download
-                .map(|download| download.chunks)
-                .unwrap_or_default();
+                .map_or_default(|download| download.chunks);
             // Plain APKs come whole; a split one would need its chunks joined.
             let [chunk] = <[ChunkInfo; 1]>::try_from(chunks).map_err(|chunks| {
                 GpapiError::from(format!(

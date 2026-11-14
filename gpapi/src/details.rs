@@ -71,8 +71,7 @@ fn fast_follow_packs(bytes: &[u8]) -> Result<Vec<String>, prost::DecodeError> {
         .and_then(|response| response.item)
         .and_then(|item| item.details)
         .and_then(|details| details.app_details)
-        .map(|app_details| app_details.files)
-        .unwrap_or_default();
+        .map_or_default(|app_details| app_details.files);
     Ok(files
         .into_iter()
         .filter(|file| file.file_type == Some(FILE_TYPE_ASSET_PACK))
