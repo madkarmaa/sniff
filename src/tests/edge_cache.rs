@@ -114,10 +114,21 @@ fn cache_control_matches_the_ttl() {
 
 #[test]
 fn remaining_ttl_counts_down_with_age() {
-    assert_eq!(remaining_ttl_secs(None), TTL_SECS);
-    assert_eq!(remaining_ttl_secs(Some("0")), TTL_SECS);
-    assert_eq!(remaining_ttl_secs(Some(" 20 ")), 100);
-    assert_eq!(remaining_ttl_secs(Some("120")), 0);
-    assert_eq!(remaining_ttl_secs(Some("9999")), 0);
-    assert_eq!(remaining_ttl_secs(Some("garbage")), TTL_SECS);
+    assert_eq!(remaining_ttl_secs(TTL_SECS, None), TTL_SECS);
+    assert_eq!(remaining_ttl_secs(TTL_SECS, Some("0")), TTL_SECS);
+    assert_eq!(remaining_ttl_secs(TTL_SECS, Some(" 20 ")), 100);
+    assert_eq!(remaining_ttl_secs(TTL_SECS, Some("120")), 0);
+    assert_eq!(remaining_ttl_secs(TTL_SECS, Some("9999")), 0);
+    assert_eq!(remaining_ttl_secs(TTL_SECS, Some("garbage")), TTL_SECS);
+    assert_eq!(remaining_ttl_secs(NOT_FOUND_TTL_SECS, Some("20")), 40);
+}
+
+#[test]
+fn only_successes_and_unknown_apps_are_cacheable() {
+    assert_eq!(ttl_secs(200), Some(TTL_SECS));
+    assert_eq!(ttl_secs(404), Some(NOT_FOUND_TTL_SECS));
+    assert!(NOT_FOUND_TTL_SECS < TTL_SECS);
+    for status in [400, 422, 429, 500, 501, 502, 503] {
+        assert_eq!(ttl_secs(status), None, "{status}");
+    }
 }

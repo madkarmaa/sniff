@@ -7,6 +7,7 @@ mod download_merge;
 mod edge_cache;
 mod google_play_client;
 mod handlers;
+mod in_flight;
 mod openapi_schema;
 mod package_name;
 mod rate_limit;
@@ -15,6 +16,7 @@ mod serializable_types;
 mod session_cache;
 mod session_source;
 mod session_store;
+mod shared_lookup;
 
 use api_error::ApiError;
 use client_registry::shared_registry;

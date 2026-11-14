@@ -1,7 +1,9 @@
-//! Short-lived edge cache for successful lookups, via the Workers Cache API.
+//! Short-lived edge cache for lookups, via the Workers Cache API.
 //!
-//! One lookup costs about nine upstream calls against the operator's Google
+//! One lookup costs about five upstream calls against the operator's Google
 //! accounts, so identical requests within a few seconds share one result.
+//! Successful lookups and "app not found" answers are cached; other errors
+//! are usually transient and are not.
 //! Every cache failure is logged and ignored: the Cache API is a no-op or
 //! unavailable on `*.workers.dev` and in some local-dev modes, and it must
 //! never turn a good lookup into an error.
@@ -14,11 +16,28 @@ use worker::{Cache, Context, Response, Url, console_error};
 ///
 /// Trade-off: the signed download URLs in the response expire and a new app
 /// version should show up quickly, so this must stay short; but each miss
-/// costs ~9 upstream calls, so even a couple of minutes of sharing spares the
+/// costs ~5 upstream calls, so even a couple of minutes of sharing spares the
 /// accounts from bursts (retries, several clients asking for a trending app).
 /// 120 seconds keeps URLs far inside their lifetime while still absorbing
 /// those bursts.
 pub const TTL_SECS: u64 = 120;
+
+/// How long an "app not found" answer is served from the edge cache.
+///
+/// Kept brief so an app that gets published shows up soon, while a client
+/// polling for a missing app no longer costs a details call each time.
+pub const NOT_FOUND_TTL_SECS: u64 = 60;
+
+/// How long a response with `status` may be cached, or `None` when it must
+/// not be.
+#[must_use]
+pub const fn ttl_secs(status: u16) -> Option<u64> {
+    match status {
+        200 => Some(TTL_SECS),
+        404 => Some(NOT_FOUND_TTL_SECS),
+        _ => None,
+    }
+}
 
 /// Canonical cache key for a download lookup.
 ///
@@ -41,14 +60,14 @@ pub fn cache_control(max_age_secs: u64) -> String {
     format!("public, max-age={max_age_secs}")
 }
 
-/// Seconds a cached response has left, given its `Age` header (how long the
-/// edge has held it).
+/// Seconds a cached response stored for `ttl_secs` has left, given its `Age`
+/// header (how long the edge has held it).
 #[must_use]
-pub fn remaining_ttl_secs(age_header: Option<&str>) -> u64 {
+pub fn remaining_ttl_secs(ttl_secs: u64, age_header: Option<&str>) -> u64 {
     let age = age_header
         .and_then(|age| age.trim().parse::<u64>().ok())
         .unwrap_or(0);
-    TTL_SECS.saturating_sub(age)
+    ttl_secs.saturating_sub(age)
 }
 
 /// Look `key` up. Returns a fresh response (never the cached object, whose
@@ -62,6 +81,7 @@ pub async fn lookup(key: &str) -> Option<Response> {
             return None;
         }
     };
+    let status = hit.status_code();
     let age = hit.headers().get("Age").ok().flatten();
     let bytes = match hit.bytes().await {
         Ok(bytes) => bytes,
@@ -70,7 +90,7 @@ pub async fn lookup(key: &str) -> Option<Response> {
             return None;
         }
     };
-    match rebuild(bytes, age.as_deref()) {
+    match rebuild(bytes, status, age.as_deref()) {
         Ok(response) => Some(response),
         Err(e) => {
             console_error!("Edge cache hit could not be rebuilt: {e}");
@@ -79,13 +99,15 @@ pub async fn lookup(key: &str) -> Option<Response> {
     }
 }
 
-fn rebuild(bytes: Vec<u8>, age_header: Option<&str>) -> worker::Result<Response> {
-    let response = Response::from_bytes(bytes)?;
+fn rebuild(bytes: Vec<u8>, status: u16, age_header: Option<&str>) -> worker::Result<Response> {
+    // Only cacheable statuses are stored, so the fallback is never used.
+    let ttl_secs = ttl_secs(status).unwrap_or(0);
+    let response = Response::from_bytes(bytes)?.with_status(status);
     let headers = response.headers();
     headers.set("Content-Type", "application/json")?;
     headers.set(
         "Cache-Control",
-        &cache_control(remaining_ttl_secs(age_header)),
+        &cache_control(remaining_ttl_secs(ttl_secs, age_header)),
     )?;
     headers.set("X-Sniff-Cache", "HIT")?;
     Ok(response)

@@ -3,7 +3,6 @@
 
 use crate::api_error::ApiError;
 use crate::openapi_schema::ApiResponse;
-use serde::Serialize;
 use worker::{Response, Result, Url};
 
 pub const CACHE_CONTROL_NO_STORE: &str = "no-store";
@@ -34,17 +33,6 @@ pub fn error(error: &ApiError) -> Result<Response> {
     if let Some(retry_after) = error.retry_after_secs() {
         headers.set("Retry-After", &retry_after.to_string())?;
     }
-    Ok(response)
-}
-
-/// A 200 JSON response with the given `Cache-Control`.
-///
-/// # Errors
-///
-/// Returns a worker error if serialization or header setting fails.
-pub fn json_ok<T: Serialize>(body: &T, cache_control: &str) -> Result<Response> {
-    let response = Response::from_json(body)?;
-    response.headers().set("Cache-Control", cache_control)?;
     Ok(response)
 }
 

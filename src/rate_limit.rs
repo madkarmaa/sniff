@@ -1,9 +1,10 @@
 //! Per-client limit on lookups that reach Google Play.
 //!
-//! Edge-cache hits cost nothing and are never counted. A miss costs about nine
-//! upstream calls on the operator's accounts, so one client looping over the
-//! API could get every account rate limited (or flagged) for everyone. The
-//! Workers rate-limit binding counts misses per client address in each
+//! Edge-cache hits and requests that join a lookup already in progress cost
+//! nothing and are never counted. A miss costs about five upstream calls on
+//! the operator's accounts, so one client looping over the API could get
+//! every account rate limited (or flagged) for everyone. The Workers
+//! rate-limit binding counts misses per client address in each
 //! Cloudflare location, with the limit set in `wrangler.toml`.
 //!
 //! Without the binding (local development), or when it errors, lookups go

@@ -3,16 +3,14 @@ use crate::client_registry::SharedClientRegistry;
 use crate::edge_cache;
 use crate::google_play_client::Channel;
 use crate::openapi_schema::{
-    ApiResponse, DownloadInfo, DownloadResponse, ErrorResponse, SerializableDetailsResponse,
-    TargetReport,
+    ApiResponse, DownloadResponse, ErrorResponse, SerializableDetailsResponse,
 };
 use crate::package_name::validate_package_name;
-use crate::rate_limit;
 use crate::responses;
-use crate::serializable_types::SerializableDetailsResponse as JsonDetails;
+use crate::shared_lookup;
 use std::rc::Rc;
 use std::str::FromStr;
-use worker::{Context, RateLimiter, Response, Result, Url, console_error};
+use worker::{Context, RateLimiter, Response, Result, Url};
 
 /// Per-request state shared with the route handlers.
 #[derive(Clone)]
@@ -101,8 +99,12 @@ pub struct Caller {
              "error": "Invalid Channel: snapshot"
          })
         ),
-        (status = 404, description = "App not found",
+        (status = 404, description = "App not found. Served from a 60-second edge cache; see X-Sniff-Cache.",
          body = ErrorResponse,
+         headers(
+             ("X-Sniff-Cache" = String, description = "HIT when served from the edge cache, MISS when freshly fetched"),
+             ("Cache-Control" = String, description = "public, max-age=<seconds the response may still be reused>")
+         ),
          example = json!({
              "success": false,
              "data": null,
@@ -117,7 +119,7 @@ pub struct Caller {
              "error": "This app cannot be downloaded: it may be paid or not available to the accounts and devices used by this service"
          })
         ),
-        (status = 429, description = "Too many uncached lookups from this client address (IPv6: its /64 network); retry after the delay in Retry-After. Edge-cache hits are never limited.",
+        (status = 429, description = "Too many uncached lookups from this client address (IPv6: its /64 network); retry after the delay in Retry-After. Edge-cache hits and requests that join a lookup already in progress are never limited.",
          body = ErrorResponse,
          headers(
              ("Retry-After" = u32, description = "Seconds to wait before retrying")
@@ -173,7 +175,8 @@ pub struct Caller {
 #[allow(clippy::future_not_send, clippy::large_futures)]
 /// Fetch latest app details and merged download info.
 ///
-/// Lookup failures are returned as error responses, so this only fails when
+/// Concurrent requests for the same uncached app share one lookup (see
+/// `shared_lookup`). Lookup failures are returned as error responses, so this only fails when
 /// building a response does.
 ///
 /// # Errors
@@ -198,32 +201,6 @@ pub async fn get_download_info(
     if let Some(hit) = edge_cache::lookup(&cache_key).await {
         return Ok(hit);
     }
-    // Only misses reach Google, so only misses count against the client.
-    if !rate_limit::allow(app.limiter.as_deref(), caller.address.as_deref()).await {
-        return responses::error(&ApiError::too_many_requests());
-    }
 
-    let lookup = match app.registry.get_download_info(&package_name, channel).await {
-        Ok(lookup) => lookup,
-        Err(error) => return responses::error(&error),
-    };
-    let body = ApiResponse {
-        success: true,
-        data: Some(DownloadResponse {
-            details: JsonDetails(lookup.details),
-            download: DownloadInfo::from(lookup.download),
-            targets: lookup.targets.iter().map(TargetReport::from).collect(),
-        }),
-        error: None,
-    };
-
-    // Only successful lookups get here (one that failed on every target is an
-    // error above), so at worst a partial merge is cached for the TTL.
-    let mut response = responses::json_ok(&body, &edge_cache::cache_control(edge_cache::TTL_SECS))?;
-    match response.cloned() {
-        Ok(copy) => edge_cache::store(&app.ctx, cache_key, copy),
-        Err(e) => console_error!("Response could not be cloned for the edge cache: {e}"),
-    }
-    response.headers().set("X-Sniff-Cache", "MISS")?;
-    Ok(response)
+    shared_lookup::respond(cache_key, &package_name, channel, &caller, &app).await
 }
